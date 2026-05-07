@@ -15,12 +15,31 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { loadPlaybook, discoverPlaybooks, validatePlaybook } from "./loader.js";
 import { resolveTemplate, resolvePlaybookBody, formatConstraints, } from "./template.js";
+import { logger } from "./logger.js";
 // ─── Constants ────────────────────────────────────────────────
 const STATE_DIR = path.join(process.env.HOME ?? process.env.USERPROFILE ?? "", ".openmono", "state");
 const STATE_FILE_PREFIX = "playbook-run-";
+/** Maximum recursion depth for restore-and-retry loops */
+const MAX_RESTORE_DEPTH = 3;
 // ─── Active Runs ─────────────────────────────────────────────
-/** In-memory cache of active runs */
+/** In-memory cache of active runs — guarded by a simple mutex */
 const activeRuns = new Map();
+let activeRunsLock = false;
+function withMutex(fn) {
+    // Simple spinlock guard for in-process concurrent access
+    // In a single-threaded Node.js environment this is primarily a safety measure
+    // against re-entrant calls (e.g. from recursive restore logic).
+    if (activeRunsLock) {
+        logger.warn("executor", "Mutex contention on activeRuns", {});
+    }
+    activeRunsLock = true;
+    try {
+        return fn();
+    }
+    finally {
+        activeRunsLock = false;
+    }
+}
 // ─── Public API ──────────────────────────────────────────────
 /**
  * Get a summary of all discovered playbooks.
@@ -42,21 +61,26 @@ export function listPlaybooks(tag) {
 }
 /**
  * Validate a playbook's syntax, parameters, and step structure.
+ * Also flags unknown parameters provided by the caller.
  */
 export function runValidate(name, params) {
     const pb = loadPlaybook(name);
     if (!pb) {
         return {
             valid: false,
-            issues: [
-                { field: "name", message: `Playbook '${name}' not found`, severity: "error" },
-            ],
+            issues: [{ field: "name", message: `Playbook '${name}' not found`, severity: "error" }],
         };
     }
     const issues = validatePlaybook(pb);
     // Validate parameters if provided
     const paramErrors = [];
     if (params && pb.parameters) {
+        // Detect unknown parameters
+        for (const key of Object.keys(params)) {
+            if (!(key in pb.parameters)) {
+                paramErrors.push(`Unknown parameter: '${key}' (not defined in playbook)`);
+            }
+        }
         for (const [key, paramDef] of Object.entries(pb.parameters)) {
             if (paramDef.required && !(key in params)) {
                 paramErrors.push(`Missing required parameter: ${key}`);
@@ -83,6 +107,17 @@ export function startRun(playbookName, params = {}) {
     const pb = loadPlaybook(playbookName);
     if (!pb) {
         return { run: createEmptyRun("", ""), error: `Playbook '${playbookName}' not found` };
+    }
+    // Detect unknown parameters
+    if (pb.parameters) {
+        for (const key of Object.keys(params)) {
+            if (!(key in pb.parameters)) {
+                return {
+                    run: createEmptyRun("", ""),
+                    error: `Unknown parameter: '${key}' (not defined in playbook '${playbookName}')`,
+                };
+            }
+        }
     }
     // Validate parameters
     if (pb.parameters) {
@@ -134,6 +169,7 @@ export function startRun(playbookName, params = {}) {
     };
     activeRuns.set(runId, run);
     persistRun(run);
+    logger.info("executor", `Started playbook run: ${playbookName}`, { runId });
     return { run };
 }
 /**
@@ -148,14 +184,11 @@ export function getCurrentStepContext(run) {
     if (run.currentStepIndex >= steps.length)
         return null;
     const step = steps[run.currentStepIndex];
-    const stepResult = run.stepResults[run.currentStepIndex];
     // Build template context
     const ctx = {
         params: run.params,
         state: run.state,
-        constraints: pb.constraints
-            ? formatConstraints(pb.constraints)
-            : "",
+        constraints: pb.constraints ? formatConstraints(pb.constraints) : "",
         baseDir: pb._dir,
     };
     // Resolve the playbook body as system prompt
@@ -163,9 +196,7 @@ export function getCurrentStepContext(run) {
     // Resolve the step prompt
     let stepPrompt = "";
     if (step.file) {
-        const filePath = path.isAbsolute(step.file)
-            ? step.file
-            : path.resolve(pb._dir, step.file);
+        const filePath = path.isAbsolute(step.file) ? step.file : path.resolve(pb._dir, step.file);
         if (fs.existsSync(filePath)) {
             stepPrompt = fs.readFileSync(filePath, "utf-8");
         }
@@ -190,118 +221,134 @@ export function getCurrentStepContext(run) {
  * Mark the current step as completed and advance.
  * Persists state for checkpoint/resume support.
  */
-export function completeCurrentStep(runId, output, error) {
-    const run = activeRuns.get(runId);
-    if (!run) {
-        const persisted = loadPersistedRun(runId);
-        if (!persisted)
-            return { error: `Run '${runId}' not found` };
-        // Restore from persistence
-        activeRuns.set(runId, persisted);
-        return completeCurrentStep(runId, output, error);
-    }
-    if (run.currentStepIndex >= run.stepResults.length) {
-        return { error: "No more steps in run" };
-    }
-    const pb = loadPlaybook(run.playbookName);
-    if (!pb)
-        return { error: `Playbook '${run.playbookName}' not found` };
-    const stepResult = run.stepResults[run.currentStepIndex];
-    const step = pb.steps?.[run.currentStepIndex];
-    if (error) {
-        stepResult.status = "failed";
-        stepResult.error = error;
+export function completeCurrentStep(runId, output, error, _depth = 0) {
+    return withMutex(() => {
+        const run = activeRuns.get(runId);
+        if (!run) {
+            // Guard against infinite restore loops
+            if (_depth >= MAX_RESTORE_DEPTH) {
+                return { error: `Run '${runId}' not found (max restore depth exceeded)` };
+            }
+            const persisted = loadPersistedRun(runId);
+            if (!persisted)
+                return { error: `Run '${runId}' not found` };
+            // Restore from persistence
+            activeRuns.set(runId, persisted);
+            return completeCurrentStep(runId, output, error, _depth + 1);
+        }
+        if (run.currentStepIndex >= run.stepResults.length) {
+            return { error: "No more steps in run" };
+        }
+        const pb = loadPlaybook(run.playbookName);
+        if (!pb)
+            return { error: `Playbook '${run.playbookName}' not found` };
+        const stepResult = run.stepResults[run.currentStepIndex];
+        const step = pb.steps?.[run.currentStepIndex];
+        if (error) {
+            stepResult.status = "failed";
+            stepResult.error = error;
+            stepResult.finishedAt = new Date().toISOString();
+            run.status = "failed";
+            run.error = error;
+            run.finishedAt = new Date().toISOString();
+            persistRun(run);
+            logger.info("executor", `Step failed: ${step?.id}`, { runId, error });
+            return { run, nextStepContext: null };
+        }
+        stepResult.status = "completed";
+        stepResult.output = output;
         stepResult.finishedAt = new Date().toISOString();
-        run.status = "failed";
-        run.error = error;
-        run.finishedAt = new Date().toISOString();
+        // Store named output
+        if (step?.output && output !== undefined) {
+            run.state[step.output] = output;
+        }
+        run.currentStepIndex++;
+        // Check if done
+        if (run.currentStepIndex >= run.totalSteps) {
+            run.status = "completed";
+            run.finishedAt = new Date().toISOString();
+            persistRun(run);
+            logger.info("executor", `Playbook run completed: ${run.playbookName}`, { runId });
+            return { run, nextStepContext: null };
+        }
+        // Advance to next step
+        run.stepResults[run.currentStepIndex] = {
+            ...run.stepResults[run.currentStepIndex],
+            status: "running",
+            startedAt: new Date().toISOString(),
+        };
         persistRun(run);
-        return { run, nextStepContext: null };
-    }
-    stepResult.status = "completed";
-    stepResult.output = output;
-    stepResult.finishedAt = new Date().toISOString();
-    // Store named output
-    if (step?.output && output !== undefined) {
-        run.state[step.output] = output;
-    }
-    run.currentStepIndex++;
-    // Check if done
-    if (run.currentStepIndex >= run.totalSteps) {
-        run.status = "completed";
-        run.finishedAt = new Date().toISOString();
-        persistRun(run);
-        return { run, nextStepContext: null };
-    }
-    // Advance to next step
-    run.stepResults[run.currentStepIndex] = {
-        ...run.stepResults[run.currentStepIndex],
-        status: "running",
-        startedAt: new Date().toISOString(),
-    };
-    persistRun(run);
-    const nextCtx = getCurrentStepContext(run);
-    return { run, nextStepContext: nextCtx };
+        const nextCtx = getCurrentStepContext(run);
+        return { run, nextStepContext: nextCtx };
+    });
 }
 /**
  * Mark the current step as skipped.
  */
-export function skipCurrentStep(runId) {
-    const run = activeRuns.get(runId);
-    if (!run) {
-        const persisted = loadPersistedRun(runId);
-        if (!persisted)
-            return { error: `Run '${runId}' not found` };
-        activeRuns.set(runId, persisted);
-        return skipCurrentStep(runId);
-    }
-    if (run.currentStepIndex >= run.stepResults.length) {
-        return { error: "No more steps in run" };
-    }
-    const stepResult = run.stepResults[run.currentStepIndex];
-    stepResult.status = "skipped";
-    stepResult.finishedAt = new Date().toISOString();
-    run.currentStepIndex++;
-    if (run.currentStepIndex >= run.totalSteps) {
-        run.status = "completed";
-        run.finishedAt = new Date().toISOString();
+export function skipCurrentStep(runId, _depth = 0) {
+    return withMutex(() => {
+        const run = activeRuns.get(runId);
+        if (!run) {
+            if (_depth >= MAX_RESTORE_DEPTH) {
+                return { error: `Run '${runId}' not found (max restore depth exceeded)` };
+            }
+            const persisted = loadPersistedRun(runId);
+            if (!persisted)
+                return { error: `Run '${runId}' not found` };
+            activeRuns.set(runId, persisted);
+            return skipCurrentStep(runId, _depth + 1);
+        }
+        if (run.currentStepIndex >= run.stepResults.length) {
+            return { error: "No more steps in run" };
+        }
+        const stepResult = run.stepResults[run.currentStepIndex];
+        stepResult.status = "skipped";
+        stepResult.finishedAt = new Date().toISOString();
+        run.currentStepIndex++;
+        if (run.currentStepIndex >= run.totalSteps) {
+            run.status = "completed";
+            run.finishedAt = new Date().toISOString();
+            persistRun(run);
+            return { run, nextStepContext: null };
+        }
+        run.stepResults[run.currentStepIndex] = {
+            ...run.stepResults[run.currentStepIndex],
+            status: "running",
+            startedAt: new Date().toISOString(),
+        };
         persistRun(run);
-        return { run, nextStepContext: null };
-    }
-    run.stepResults[run.currentStepIndex] = {
-        ...run.stepResults[run.currentStepIndex],
-        status: "running",
-        startedAt: new Date().toISOString(),
-    };
-    persistRun(run);
-    const nextCtx = getCurrentStepContext(run);
-    return { run, nextStepContext: nextCtx };
+        const nextCtx = getCurrentStepContext(run);
+        return { run, nextStepContext: nextCtx };
+    });
 }
 /**
  * Resume an interrupted run from its last checkpoint.
  */
 export function resumeRun(runId) {
-    let run = activeRuns.get(runId);
-    if (!run) {
-        const persisted = loadPersistedRun(runId);
-        if (!persisted)
-            return { error: `Run '${runId}' not found` };
-        run = persisted;
-        activeRuns.set(runId, run);
-    }
-    if (run.status === "completed") {
-        return { error: `Run '${runId}' is already completed` };
-    }
-    run.status = "running";
-    // Set current step as running if it's pending
-    if (run.currentStepIndex < run.stepResults.length &&
-        run.stepResults[run.currentStepIndex].status === "pending") {
-        run.stepResults[run.currentStepIndex].status = "running";
-        run.stepResults[run.currentStepIndex].startedAt = new Date().toISOString();
-    }
-    persistRun(run);
-    const stepContext = getCurrentStepContext(run);
-    return { run, stepContext };
+    return withMutex(() => {
+        let run = activeRuns.get(runId);
+        if (!run) {
+            const persisted = loadPersistedRun(runId);
+            if (!persisted)
+                return { error: `Run '${runId}' not found` };
+            run = persisted;
+            activeRuns.set(runId, run);
+        }
+        if (run.status === "completed") {
+            return { error: `Run '${runId}' is already completed` };
+        }
+        run.status = "running";
+        // Set current step as running if it's pending
+        if (run.currentStepIndex < run.stepResults.length &&
+            run.stepResults[run.currentStepIndex].status === "pending") {
+            run.stepResults[run.currentStepIndex].status = "running";
+            run.stepResults[run.currentStepIndex].startedAt = new Date().toISOString();
+        }
+        persistRun(run);
+        logger.info("executor", `Resumed playbook run: ${run.playbookName}`, { runId });
+        const stepContext = getCurrentStepContext(run);
+        return { run, stepContext };
+    });
 }
 /**
  * Get the full state of a run (active or persisted).
@@ -328,14 +375,14 @@ function validateParamValue(key, value, def) {
             return null;
         }
         case "Number": {
-            const num = Number(value);
-            if (isNaN(num)) {
+            // Strict check: only accept actual numbers, not strings that happen to parse
+            if (typeof value !== "number" || isNaN(value)) {
                 return `Parameter '${key}' expected Number, got ${typeof value}`;
             }
-            if (def.min !== undefined && num < def.min) {
+            if (def.min !== undefined && value < def.min) {
                 return `Parameter '${key}' minimum is ${def.min}`;
             }
-            if (def.max !== undefined && num > def.max) {
+            if (def.max !== undefined && value > def.max) {
                 return `Parameter '${key}' maximum is ${def.max}`;
             }
             return null;
@@ -366,7 +413,9 @@ function persistRun(run) {
         fs.writeFileSync(filePath, JSON.stringify(run, null, 2), "utf-8");
     }
     catch (err) {
-        console.error(`[playbooks] Failed to persist run ${run.runId}: ${err instanceof Error ? err.message : err}`);
+        logger.error("executor", `Failed to persist run ${run.runId}`, {
+            error: err instanceof Error ? err.message : String(err),
+        });
     }
 }
 function loadPersistedRun(runId) {
@@ -378,6 +427,7 @@ function loadPersistedRun(runId) {
         return JSON.parse(raw);
     }
     catch {
+        logger.warn("executor", `Failed to load persisted run: ${runId}`, {});
         return null;
     }
 }

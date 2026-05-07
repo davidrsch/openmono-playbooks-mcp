@@ -113,8 +113,7 @@ export function parsePlaybookString(content, filePath) {
     if (!frontmatter.version || typeof frontmatter.version !== "string") {
         throw new Error(`Playbook '${frontmatter.name}' is missing required 'version' field`);
     }
-    if (!frontmatter.description ||
-        typeof frontmatter.description !== "string") {
+    if (!frontmatter.description || typeof frontmatter.description !== "string") {
         throw new Error(`Playbook '${frontmatter.name}' is missing required 'description' field`);
     }
     // Normalize trigger
@@ -125,12 +124,8 @@ export function parsePlaybookString(content, filePath) {
         description: frontmatter.description,
         trigger,
         "trigger-patterns": normalizeStringArray(frontmatter["trigger-patterns"]),
-        "user-invocable": frontmatter["user-invocable"] !== undefined
-            ? Boolean(frontmatter["user-invocable"])
-            : true,
-        "argument-hint": typeof frontmatter["argument-hint"] === "string"
-            ? frontmatter["argument-hint"]
-            : undefined,
+        "user-invocable": frontmatter["user-invocable"] !== undefined ? Boolean(frontmatter["user-invocable"]) : true,
+        "argument-hint": typeof frontmatter["argument-hint"] === "string" ? frontmatter["argument-hint"] : undefined,
         parameters: normalizeParameters(frontmatter.parameters),
         steps: normalizeSteps(frontmatter.steps),
         constraints: normalizeConstraints(frontmatter.constraints),
@@ -190,9 +185,7 @@ function normalizeParameters(raw) {
             required: Boolean(p.required),
             default: p.default,
             hint: typeof p.hint === "string" ? p.hint : undefined,
-            enum: Array.isArray(p.enum)
-                ? p.enum.map(String)
-                : undefined,
+            enum: Array.isArray(p.enum) ? p.enum.map(String) : undefined,
             min: typeof p.min === "number" ? p.min : undefined,
             max: typeof p.max === "number" ? p.max : undefined,
         };
@@ -205,25 +198,17 @@ function normalizeSteps(raw) {
     return raw.map((s, i) => {
         const step = s;
         return {
-            id: typeof step.id === "string"
-                ? step.id
-                : `step-${String(i).padStart(2, "0")}`,
-            requires: Array.isArray(step.requires)
-                ? step.requires.map(String)
-                : [],
+            id: typeof step.id === "string" ? step.id : `step-${String(i).padStart(2, "0")}`,
+            requires: Array.isArray(step.requires) ? step.requires.map(String) : [],
             file: typeof step.file === "string" ? step.file : undefined,
-            "inline-prompt": typeof step["inline-prompt"] === "string"
-                ? step["inline-prompt"]
-                : undefined,
+            "inline-prompt": typeof step["inline-prompt"] === "string" ? step["inline-prompt"] : undefined,
             script: typeof step.script === "string" ? step.script : undefined,
             gate: normalizeGate(step.gate),
             output: typeof step.output === "string" ? step.output : undefined,
             agent: typeof step.agent === "string" ? step.agent : undefined,
             playbook: typeof step.playbook === "string" ? step.playbook : undefined,
             auto_retry: Boolean(step.auto_retry),
-            description: typeof step.description === "string"
-                ? step.description
-                : undefined,
+            description: typeof step.description === "string" ? step.description : undefined,
             timeout: typeof step.timeout === "number" ? step.timeout : undefined,
         };
     });

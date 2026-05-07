@@ -35,10 +35,7 @@ export function resolveSearchPaths(): string[] {
   if (envPath) {
     for (const p of envPath.split(path.delimiter)) {
       const resolved = p.startsWith("~")
-        ? path.join(
-            process.env.HOME ?? process.env.USERPROFILE ?? "",
-            p.slice(1)
-          )
+        ? path.join(process.env.HOME ?? process.env.USERPROFILE ?? "", p.slice(1))
         : p;
       if (fs.existsSync(resolved)) paths.push(resolved);
     }
@@ -48,7 +45,7 @@ export function resolveSearchPaths(): string[] {
   const homePlaybooks = path.join(
     process.env.HOME ?? process.env.USERPROFILE ?? "",
     ".openmono",
-    "playbooks"
+    "playbooks",
   );
   if (fs.existsSync(homePlaybooks)) paths.push(homePlaybooks);
 
@@ -86,7 +83,7 @@ export function discoverPlaybooks(): PlaybookDefinition[] {
         } catch (err) {
           // Skip unparseable playbooks but log a warning
           console.error(
-            `[playbooks] Warning: failed to parse ${pbPath}: ${err instanceof Error ? err.message : err}`
+            `[playbooks] Warning: failed to parse ${pbPath}: ${err instanceof Error ? err.message : err}`,
           );
         }
       }
@@ -126,15 +123,10 @@ export function parsePlaybookFile(filePath: string): PlaybookDefinition {
 /**
  * Parses a PLAYBOOK.md string into a PlaybookDefinition.
  */
-export function parsePlaybookString(
-  content: string,
-  filePath: string
-): PlaybookDefinition {
+export function parsePlaybookString(content: string, filePath: string): PlaybookDefinition {
   const match = content.match(FRONTMATTER_REGEX);
   if (!match) {
-    throw new Error(
-      `No YAML frontmatter found in playbook file: ${filePath}`
-    );
+    throw new Error(`No YAML frontmatter found in playbook file: ${filePath}`);
   }
 
   const [, yamlStr, body] = match;
@@ -145,17 +137,10 @@ export function parsePlaybookString(
     throw new Error(`Playbook at ${filePath} is missing required 'name' field`);
   }
   if (!frontmatter.version || typeof frontmatter.version !== "string") {
-    throw new Error(
-      `Playbook '${frontmatter.name}' is missing required 'version' field`
-    );
+    throw new Error(`Playbook '${frontmatter.name}' is missing required 'version' field`);
   }
-  if (
-    !frontmatter.description ||
-    typeof frontmatter.description !== "string"
-  ) {
-    throw new Error(
-      `Playbook '${frontmatter.name}' is missing required 'description' field`
-    );
+  if (!frontmatter.description || typeof frontmatter.description !== "string") {
+    throw new Error(`Playbook '${frontmatter.name}' is missing required 'description' field`);
   }
 
   // Normalize trigger
@@ -166,17 +151,11 @@ export function parsePlaybookString(
     version: frontmatter.version as string,
     description: frontmatter.description as string,
     trigger,
-    "trigger-patterns": normalizeStringArray(
-      frontmatter["trigger-patterns"]
-    ),
+    "trigger-patterns": normalizeStringArray(frontmatter["trigger-patterns"]),
     "user-invocable":
-      frontmatter["user-invocable"] !== undefined
-        ? Boolean(frontmatter["user-invocable"])
-        : true,
+      frontmatter["user-invocable"] !== undefined ? Boolean(frontmatter["user-invocable"]) : true,
     "argument-hint":
-      typeof frontmatter["argument-hint"] === "string"
-        ? frontmatter["argument-hint"]
-        : undefined,
+      typeof frontmatter["argument-hint"] === "string" ? frontmatter["argument-hint"] : undefined,
     parameters: normalizeParameters(frontmatter.parameters),
     steps: normalizeSteps(frontmatter.steps),
     constraints: normalizeConstraints(frontmatter.constraints),
@@ -189,8 +168,12 @@ export function parsePlaybookString(
     _dir: path.dirname(filePath),
   };
 
-  // Sort steps topologically if there are dependencies
-  if (definition.steps && definition.steps.length > 1) {
+  // Sort steps topologically if there are dependency edges
+  if (
+    definition.steps &&
+    definition.steps.length > 1 &&
+    definition.steps.some((s) => s.requires.length > 0)
+  ) {
     definition.steps = topologicalSort(definition.steps);
   }
 
@@ -199,9 +182,7 @@ export function parsePlaybookString(
 
 // ─── Normalization Helpers ────────────────────────────────────
 
-function normalizeTrigger(
-  raw: unknown
-): PlaybookDefinition["trigger"] {
+function normalizeTrigger(raw: unknown): PlaybookDefinition["trigger"] {
   const s = String(raw ?? "manual").toLowerCase();
   if (s === "auto") return "auto";
   if (s === "both") return "both";
@@ -216,18 +197,14 @@ function normalizeStringArray(raw: unknown): string[] | undefined {
   return undefined;
 }
 
-function normalizeContextMode(
-  raw: unknown
-): PlaybookDefinition["context-mode"] {
+function normalizeContextMode(raw: unknown): PlaybookDefinition["context-mode"] {
   const s = String(raw ?? "").toLowerCase();
   if (s === "selective") return "Selective";
   if (s === "fork") return "Fork";
   return "Full";
 }
 
-function normalizeParameters(
-  raw: unknown
-): Record<string, PlaybookParameter> | undefined {
+function normalizeParameters(raw: unknown): Record<string, PlaybookParameter> | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const params: Record<string, PlaybookParameter> = {};
   for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
@@ -235,7 +212,7 @@ function normalizeParameters(
     const p = val as Record<string, unknown>;
     const typeStr = String(p.type ?? "String");
     const paramType: PlaybookParameter["type"] = ["String", "Number", "Boolean", "Array"].includes(
-      typeStr
+      typeStr,
     )
       ? (typeStr as PlaybookParameter["type"])
       : "String";
@@ -245,9 +222,7 @@ function normalizeParameters(
       required: Boolean(p.required),
       default: p.default,
       hint: typeof p.hint === "string" ? p.hint : undefined,
-      enum: Array.isArray(p.enum)
-        ? p.enum.map(String)
-        : undefined,
+      enum: Array.isArray(p.enum) ? p.enum.map(String) : undefined,
       min: typeof p.min === "number" ? p.min : undefined,
       max: typeof p.max === "number" ? p.max : undefined,
     };
@@ -260,29 +235,18 @@ function normalizeSteps(raw: unknown): PlaybookStep[] | undefined {
   return raw.map((s: unknown, i: number) => {
     const step = s as Record<string, unknown>;
     return {
-      id:
-        typeof step.id === "string"
-          ? step.id
-          : `step-${String(i).padStart(2, "0")}`,
-      requires: Array.isArray(step.requires)
-        ? step.requires.map(String)
-        : [],
+      id: typeof step.id === "string" ? step.id : `step-${String(i).padStart(2, "0")}`,
+      requires: Array.isArray(step.requires) ? step.requires.map(String) : [],
       file: typeof step.file === "string" ? step.file : undefined,
       "inline-prompt":
-        typeof step["inline-prompt"] === "string"
-          ? step["inline-prompt"]
-          : undefined,
+        typeof step["inline-prompt"] === "string" ? step["inline-prompt"] : undefined,
       script: typeof step.script === "string" ? step.script : undefined,
       gate: normalizeGate(step.gate),
       output: typeof step.output === "string" ? step.output : undefined,
       agent: typeof step.agent === "string" ? step.agent : undefined,
-      playbook:
-        typeof step.playbook === "string" ? step.playbook : undefined,
+      playbook: typeof step.playbook === "string" ? step.playbook : undefined,
       auto_retry: Boolean(step.auto_retry),
-      description:
-        typeof step.description === "string"
-          ? step.description
-          : undefined,
+      description: typeof step.description === "string" ? step.description : undefined,
       timeout: typeof step.timeout === "number" ? step.timeout : undefined,
     };
   });
@@ -291,15 +255,12 @@ function normalizeSteps(raw: unknown): PlaybookStep[] | undefined {
 function normalizeGate(raw: unknown): PlaybookStep["gate"] {
   if (!raw) return undefined;
   const s = String(raw);
-  if (["Confirm", "Review", "Approve"].includes(s))
-    return s as PlaybookStep["gate"];
+  if (["Confirm", "Review", "Approve"].includes(s)) return s as PlaybookStep["gate"];
   if (s.toLowerCase() === "none") return undefined;
   return undefined;
 }
 
-function normalizeConstraints(
-  raw: unknown
-): PlaybookConstraint[] | undefined {
+function normalizeConstraints(raw: unknown): PlaybookConstraint[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const constraints = raw.map((c: unknown) => {
     const con = c as Record<string, unknown>;
@@ -308,8 +269,7 @@ function normalizeConstraints(
       severity: ["error", "warning"].includes(String(con.severity ?? ""))
         ? (con.severity as "error" | "warning")
         : "error",
-      reason:
-        typeof con.reason === "string" ? con.reason : undefined,
+      reason: typeof con.reason === "string" ? con.reason : undefined,
     };
   });
   return constraints.length > 0 ? constraints : undefined;
@@ -370,9 +330,7 @@ export interface ValidationIssue {
 /**
  * Validates a playbook definition and returns any issues found.
  */
-export function validatePlaybook(
-  def: PlaybookDefinition
-): ValidationIssue[] {
+export function validatePlaybook(def: PlaybookDefinition): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
   // Version must be valid SemVer

@@ -17,6 +17,7 @@ import type { PlaybookStep, PlaybookRunState, PlaybookSummary } from "./types.js
 export declare function listPlaybooks(tag?: string): PlaybookSummary[];
 /**
  * Validate a playbook's syntax, parameters, and step structure.
+ * Also flags unknown parameters provided by the caller.
  */
 export declare function runValidate(name: string, params?: Record<string, unknown>): {
     valid: boolean;
@@ -51,7 +52,7 @@ export declare function getCurrentStepContext(run: PlaybookRunState): {
  * Mark the current step as completed and advance.
  * Persists state for checkpoint/resume support.
  */
-export declare function completeCurrentStep(runId: string, output?: string, error?: string): {
+export declare function completeCurrentStep(runId: string, output?: string, error?: string, _depth?: number): {
     run: PlaybookRunState;
     nextStepContext: ReturnType<typeof getCurrentStepContext>;
 } | {
@@ -60,7 +61,7 @@ export declare function completeCurrentStep(runId: string, output?: string, erro
 /**
  * Mark the current step as skipped.
  */
-export declare function skipCurrentStep(runId: string): {
+export declare function skipCurrentStep(runId: string, _depth?: number): {
     run: PlaybookRunState;
     nextStepContext: ReturnType<typeof getCurrentStepContext>;
 } | {

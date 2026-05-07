@@ -19,7 +19,7 @@ import { resolve, isAbsolute } from "node:path";
  * Variables are of the form {{type.name}} or {{type:value}}.
  */
 export function resolveTemplate(text, ctx) {
-    return text.replace(/\{\{(params|state|shell|file|env|constraints)\.?([^}]*)\}\}/g, (match, type, key) => {
+    return text.replace(/\{\{(params|state|shell|file|env|constraints)[.:]?([^}]*)\}\}/g, (match, type, key) => {
         return resolveSingleVariable(type, key.trim(), ctx) ?? match;
     });
 }
@@ -55,9 +55,7 @@ function resolveSingleVariable(type, key, ctx) {
         }
         case "file": {
             try {
-                const filePath = isAbsolute(key)
-                    ? key
-                    : resolve(ctx.baseDir, key);
+                const filePath = isAbsolute(key) ? key : resolve(ctx.baseDir, key);
                 if (existsSync(filePath)) {
                     return readFileSync(filePath, "utf-8").trim();
                 }

@@ -15,7 +15,6 @@
 import { execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, isAbsolute } from "node:path";
-import type { PlaybookRunState } from "./types.js";
 
 /**
  * Template resolution context passed during step execution.
@@ -35,23 +34,16 @@ export interface TemplateContext {
  * Resolves all template variables in a string.
  * Variables are of the form {{type.name}} or {{type:value}}.
  */
-export function resolveTemplate(
-  text: string,
-  ctx: TemplateContext
-): string {
+export function resolveTemplate(text: string, ctx: TemplateContext): string {
   return text.replace(
-    /\{\{(params|state|shell|file|env|constraints)\.?([^}]*)\}\}/g,
+    /\{\{(params|state|shell|file|env|constraints)[.:]?([^}]*)\}\}/g,
     (match, type: string, key: string) => {
       return resolveSingleVariable(type, key.trim(), ctx) ?? match;
-    }
+    },
   );
 }
 
-function resolveSingleVariable(
-  type: string,
-  key: string,
-  ctx: TemplateContext
-): string | null {
+function resolveSingleVariable(type: string, key: string, ctx: TemplateContext): string | null {
   switch (type) {
     case "params": {
       if (key in ctx.params) {
@@ -84,9 +76,7 @@ function resolveSingleVariable(
 
     case "file": {
       try {
-        const filePath = isAbsolute(key)
-          ? key
-          : resolve(ctx.baseDir, key);
+        const filePath = isAbsolute(key) ? key : resolve(ctx.baseDir, key);
         if (existsSync(filePath)) {
           return readFileSync(filePath, "utf-8").trim();
         }
@@ -113,20 +103,14 @@ function resolveSingleVariable(
  * Resolves all template variables in a playbook body.
  * Used before sending the system prompt to the LLM.
  */
-export function resolvePlaybookBody(
-  body: string,
-  ctx: TemplateContext
-): string {
+export function resolvePlaybookBody(body: string, ctx: TemplateContext): string {
   return resolveTemplate(body, ctx);
 }
 
 /**
  * Resolves a step's prompt (from file or inline) with template variables.
  */
-export function resolveStepPrompt(
-  text: string,
-  ctx: TemplateContext
-): string {
+export function resolveStepPrompt(text: string, ctx: TemplateContext): string {
   return resolveTemplate(text, ctx);
 }
 
@@ -134,7 +118,7 @@ export function resolveStepPrompt(
  * Formats constraints into a text block for injection into context.
  */
 export function formatConstraints(
-  constraints: { rule: string; severity?: string; reason?: string }[]
+  constraints: { rule: string; severity?: string; reason?: string }[],
 ): string {
   if (!constraints || constraints.length === 0) return "";
 

@@ -7,11 +7,12 @@
  * to any MCP-compatible agent (Claude Desktop, Cline, Continue, etc.).
  *
  * This server makes playbooks accessible as first-class tools:
- *   - list_playbooks     — Discover available playbooks
- *   - run_playbook       — Execute a playbook with typed parameters
- *   - resume_playbook    — Resume an interrupted playbook
- *   - get_playbook_state — Inspect run state
- *   - validate_playbook  — Validate syntax and parameters
+ *   - health_check        — Server readiness probe
+ *   - list_playbooks      — Discover available playbooks
+ *   - run_playbook        — Execute a playbook with typed parameters
+ *   - resume_playbook     — Resume an interrupted playbook
+ *   - get_playbook_state  — Inspect run state
+ *   - validate_playbook   — Validate syntax and parameters
  *
  * Inspired by and derived from OpenMonoAgent.ai by StartupHakk.
  * See: https://github.com/StartupHakk/OpenMonoAgent.ai
@@ -35,6 +36,48 @@ import {
   runValidate,
   getCurrentStepContext,
 } from "./executor.js";
+import { ErrorCode, makeError, type McpErrorResult } from "./errors.js";
+import { logger } from "./logger.js";
+
+// ─── Rate Limiting & Input Guards ────────────────────────────
+
+/** Maximum request body size the server will accept (1 MiB) */
+const MAX_INPUT_SIZE = 1_048_576;
+
+/** Minimum interval between requests from the same "session" (ms) */
+const RATE_LIMIT_WINDOW_MS = 100;
+
+/** Maps a coarse session key to the last request timestamp */
+const rateLimitMap = new Map<string, number>();
+
+function checkInputSize(name: string, args: Record<string, unknown> | undefined): McpErrorResult | null {
+  const raw = JSON.stringify(args ?? {});
+  if (Buffer.byteLength(raw, "utf-8") > MAX_INPUT_SIZE) {
+    return makeError(
+      ErrorCode.INPUT_TOO_LARGE,
+      `Tool '${name}' input exceeds maximum size of ${MAX_INPUT_SIZE} bytes`,
+      { tool: name, size: Buffer.byteLength(raw, "utf-8") },
+    );
+  }
+  return null;
+}
+
+function checkRateLimit(): McpErrorResult | null {
+  // Coarse in-process rate limiter: use an ephemeral session key
+  // (In production an MCP server would use transport-scoped identifiers.)
+  const key = "default";
+  const last = rateLimitMap.get(key) ?? 0;
+  const now = Date.now();
+  if (now - last < RATE_LIMIT_WINDOW_MS) {
+    return makeError(
+      ErrorCode.RATE_LIMIT_EXCEEDED,
+      `Rate limit exceeded. Minimum ${RATE_LIMIT_WINDOW_MS}ms between requests.`,
+      { retryAfterMs: RATE_LIMIT_WINDOW_MS - (now - last) },
+    );
+  }
+  rateLimitMap.set(key, now);
+  return null;
+}
 
 // ─── Server Setup ─────────────────────────────────────────────
 
@@ -47,7 +90,7 @@ const server = new Server(
     capabilities: {
       tools: {},
     },
-  }
+  },
 );
 
 // ─── Tool Definitions ────────────────────────────────────────
@@ -56,9 +99,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
+        name: "health_check",
+        description:
+          "Health check / readiness probe. Returns the server status including uptime, active runs count, and search paths. Use this to verify the MCP server is operational before issuing other commands.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
         name: "list_playbooks",
         description:
-          "Discover all available playbooks with names, descriptions, parameters, and tags. Playbooks are declarative, versioned, multi-step AI workflows encoded as YAML+Markdown files.",
+          "Discover all available playbooks with names, descriptions, parameters, and tags. Playbooks are declarative, versioned, multi-step AI workflows encoded as YAML+Markdown files. Use this to explore what workflows are available before running one.",
         inputSchema: {
           type: "object",
           properties: {
@@ -72,18 +124,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "run_playbook",
         description:
-          "Start executing a multi-step playbook workflow. Returns the first step's system prompt, resolved step prompt, and gate information. The agent should complete the step and then call complete_step or skip_step.",
+          "Start executing a multi-step playbook workflow. Returns the first step's system prompt, resolved step prompt, and gate information. The agent should complete the step and then call complete_step or skip_step. Each run is assigned a unique runId that must be used in subsequent step-control calls.",
         inputSchema: {
           type: "object",
           properties: {
             name: {
               type: "string",
-              description: "Name of the playbook to execute (e.g., 'commit', 'release', 'incident-response')",
+              description:
+                "Name of the playbook to execute (e.g., 'commit', 'release', 'incident-response')",
             },
             params: {
               type: "object",
               description:
-                "Typed parameters for the playbook. Each playbook defines its own parameters with types, defaults, and validation rules.",
+                "Typed parameters for the playbook. Each playbook defines its own parameters with types (String, Number, Boolean, Array), defaults, and validation rules. Unknown or mistyped parameters will be rejected.",
               additionalProperties: true,
             },
           },
@@ -93,7 +146,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "complete_step",
         description:
-          "Mark the current playbook step as completed and advance to the next step. Returns the next step's context if there are more steps, or indicates the run is finished.",
+          "Mark the current playbook step as completed and advance to the next step. Returns the next step's context if there are more steps, or indicates the run is finished. Pass the optional output parameter to store a named value for downstream steps (referenced via {{state.key}}).",
         inputSchema: {
           type: "object",
           properties: {
@@ -104,7 +157,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             output: {
               type: "string",
               description:
-                "Optional output from the completed step. If the step defines a named output key, this value will be stored for use by downstream steps via {{state.key}}.",
+                "Optional output from the completed step. If the step defines a named output key in its YAML, this value will be stored for use by downstream steps via {{state.key}} in templates.",
             },
           },
           required: ["runId"],
@@ -113,7 +166,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "skip_step",
         description:
-          "Skip the current playbook step and advance to the next one. Useful for optional steps or when a step is not applicable.",
+          "Skip the current playbook step and advance to the next one. Useful for optional steps, conditional branches, or when a step is not applicable to the current context.",
         inputSchema: {
           type: "object",
           properties: {
@@ -128,7 +181,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "fail_step",
         description:
-          "Mark the current playbook step as failed. The playbook run will be terminated with a failure status.",
+          "Mark the current playbook step as failed. The playbook run will be terminated with a failure status. The run cannot be resumed after failure unless the step has auto_retry enabled.",
         inputSchema: {
           type: "object",
           properties: {
@@ -138,7 +191,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             error: {
               type: "string",
-              description: "Description of what went wrong",
+              description: "Description of what went wrong (included in run state and logs)",
             },
           },
           required: ["runId", "error"],
@@ -147,7 +200,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "resume_playbook",
         description:
-          "Resume a playbook that was interrupted (e.g., agent restart, connection loss). Restores from the last checkpoint and returns the current step context.",
+          "Resume a playbook that was interrupted (e.g., agent restart, connection loss). Restores state from the last checkpoint on disk and returns the current step context. Only works for runs that were in progress when the interruption occurred.",
         inputSchema: {
           type: "object",
           properties: {
@@ -162,7 +215,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "get_playbook_state",
         description:
-          "Get the full current state of a playbook run: which step is active, step completion status, named outputs, parameters, and run metadata.",
+          "Get the full current state of a playbook run: which step is active, step completion status, named outputs stored via {{state.*}}, parameters, and run metadata. Works for both active and completed runs.",
         inputSchema: {
           type: "object",
           properties: {
@@ -177,7 +230,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "validate_playbook",
         description:
-          "Validate a playbook's syntax, parameter definitions, and step structure. Use this to check a playbook before executing it or during development.",
+          "Validate a playbook's syntax, parameter definitions, and step structure. Use this during playbook development or before executing an unfamiliar playbook. Returns a list of issues with severity levels.",
         inputSchema: {
           type: "object",
           properties: {
@@ -187,7 +240,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             params: {
               type: "object",
-              description: "Optional parameters to validate against the playbook's parameter definitions",
+              description:
+                "Optional parameters to validate against the playbook's parameter definitions",
               additionalProperties: true,
             },
           },
@@ -200,18 +254,70 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 // ─── Tool Handler ─────────────────────────────────────────────
 
+const serverStartTime = Date.now();
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
+  // ── Rate limiting ───────────────────────────────────────────
+  // health_check bypasses rate limiting
+  if (name !== "health_check") {
+    const rateErr = checkRateLimit();
+    if (rateErr) return createErrorResult(rateErr);
+  }
+
+  // ── Input size guard ────────────────────────────────────────
+  const sizeErr = checkInputSize(name, args as Record<string, unknown> | undefined);
+  if (sizeErr) return createErrorResult(sizeErr);
+
   try {
     switch (name) {
+      case "health_check": {
+        const searchPaths = (await (async () => {
+          try {
+            const { resolveSearchPaths } = await import("./loader.js");
+            return resolveSearchPaths();
+          } catch {
+            return [];
+          }
+        })()) as string[];
+        const uptimeSec = Math.floor((Date.now() - serverStartTime) / 1000);
+        // Count persisted runs on disk for a rough active-count metric
+        let persistedRuns = 0;
+        try {
+          const nodeFs = await import("node:fs");
+          const nodePath = await import("node:path");
+          const stateDir = nodePath.join(
+            process.env.HOME ?? process.env.USERPROFILE ?? "",
+            ".openmono",
+            "state",
+          );
+          if (nodeFs.existsSync(stateDir)) {
+            persistedRuns = nodeFs.readdirSync(stateDir).filter((f: string) => f.endsWith(".json")).length;
+          }
+        } catch {
+          // ignore
+        }
+        return createTextResult(
+          [
+            "## 🟢 Server Healthy",
+            "",
+            `- **Status:** running`,
+            `- **Uptime:** ${uptimeSec}s`,
+            `- **Persisted runs on disk:** ${persistedRuns}`,
+            `- **Search paths:** ${searchPaths.length > 0 ? searchPaths.join(", ") : "(none found)"}`,
+            `- **Version:** 1.0.0`,
+          ].join("\n"),
+        );
+      }
+
       case "list_playbooks": {
         const tag = args?.tag as string | undefined;
         const playbooks = listPlaybooks(tag);
         return createTextResult(
           playbooks.length === 0
             ? "No playbooks found. Create a `.openmono/playbooks/<name>/PLAYBOOK.md` file to define one."
-            : formatPlaybookList(playbooks)
+            : formatPlaybookList(playbooks),
         );
       }
 
@@ -227,7 +333,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const ctx = getCurrentStepContext(result.run);
         if (!ctx) {
           return createTextResult(
-            `✅ Playbook "${pbName}" has no steps. Run complete.\n\nRun ID: ${result.run.runId}\nStatus: completed`
+            `✅ Playbook "${pbName}" has no steps. Run complete.\n\nRun ID: ${result.run.runId}\nStatus: completed`,
           );
         }
 
@@ -245,14 +351,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         if (result.run.status === "completed") {
           return createTextResult(
-            `✅ Playbook "${result.run.playbookName}" completed successfully!\n\nRun ID: ${runId}\nSteps completed: ${result.run.totalSteps}\n\n## Final State\n\`\`\`json\n${JSON.stringify({ params: result.run.params, state: result.run.state, stepResults: result.run.stepResults }, null, 2)}\n\`\`\``
+            `✅ Playbook "${result.run.playbookName}" completed successfully!\n\nRun ID: ${runId}\nSteps completed: ${result.run.totalSteps}\n\n## Final State\n\`\`\`json\n${JSON.stringify({ params: result.run.params, state: result.run.state, stepResults: result.run.stepResults }, null, 2)}\n\`\`\``,
           );
         }
 
         if (result.run.status === "failed") {
           return createTextResult(
             `❌ Playbook "${result.run.playbookName}" failed: ${result.run.error}`,
-            true
+            true,
           );
         }
 
@@ -260,9 +366,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return createTextResult(formatStepContext(runId, result.nextStepContext));
         }
 
-        return createTextResult(
-          `⚠️ Unexpected state after step completion. Run ID: ${runId}`
-        );
+        return createTextResult(`⚠️ Unexpected state after step completion. Run ID: ${runId}`);
       }
 
       case "skip_step": {
@@ -275,7 +379,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         if (result.run.status === "completed") {
           return createTextResult(
-            `✅ Playbook "${result.run.playbookName}" completed (last step skipped).\n\nRun ID: ${runId}`
+            `✅ Playbook "${result.run.playbookName}" completed (last step skipped).\n\nRun ID: ${runId}`,
           );
         }
 
@@ -283,9 +387,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return createTextResult(formatStepContext(runId, result.nextStepContext));
         }
 
-        return createTextResult(
-          `⚠️ Unexpected state after skipping step. Run ID: ${runId}`
-        );
+        return createTextResult(`⚠️ Unexpected state after skipping step. Run ID: ${runId}`);
       }
 
       case "fail_step": {
@@ -299,7 +401,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         return createTextResult(
           `❌ Playbook step failed. Run "${result.run.playbookName}" terminated.\n\nError: ${error}\nRun ID: ${runId}`,
-          true
+          true,
         );
       }
 
@@ -313,7 +415,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         if (!result.stepContext) {
           return createTextResult(
-            `✅ Playbook "${result.run.playbookName}" already completed.\n\nRun ID: ${runId}`
+            `✅ Playbook "${result.run.playbookName}" already completed.\n\nRun ID: ${runId}`,
           );
         }
 
@@ -338,7 +440,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `- **Finished:** ${result.finishedAt ?? "—"}\n\n` +
             `### Parameters\n\`\`\`json\n${JSON.stringify(result.params, null, 2)}\n\`\`\`\n\n` +
             `### State (named outputs)\n\`\`\`json\n${JSON.stringify(result.state, null, 2)}\n\`\`\`\n\n` +
-            `### Steps\n\`\`\`json\n${JSON.stringify(result.stepResults, null, 2)}\n\`\`\``
+            `### Steps\n\`\`\`json\n${JSON.stringify(result.stepResults, null, 2)}\n\`\`\``,
         );
       }
 
@@ -348,19 +450,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const result = runValidate(pbName, params);
 
         if (result.valid) {
-          return createTextResult(
-            `✅ Playbook "${pbName}" is valid. No issues found.`
-          );
+          return createTextResult(`✅ Playbook "${pbName}" is valid. No issues found.`);
         }
 
-        const lines: string[] = [
-          `⚠️ Playbook "${pbName}" has issues:\n`,
-        ];
+        const lines: string[] = [`⚠️ Playbook "${pbName}" has issues:\n`];
         for (const issue of result.issues) {
           const icon = issue.severity === "error" ? "🔴" : "🟡";
-          lines.push(
-            `- ${icon} [${issue.severity}] ${issue.field}: ${issue.message}`
-          );
+          lines.push(`- ${icon} [${issue.severity}] ${issue.field}: ${issue.message}`);
         }
         if (result.paramErrors && result.paramErrors.length > 0) {
           lines.push("\n### Parameter Errors:");
@@ -375,9 +471,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return createTextResult(`Unknown tool: ${name}`, true);
     }
   } catch (err) {
-    return createTextResult(
-      `❌ Internal error: ${err instanceof Error ? err.message : String(err)}`,
-      true
+    logger.error("index", "Unhandled error in tool handler", {
+      tool: name,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return createErrorResult(
+      makeError(ErrorCode.INTERNAL_ERROR, err instanceof Error ? err.message : String(err)),
     );
   }
 });
@@ -391,26 +490,41 @@ function createTextResult(text: string, isError = false): CallToolResult {
   };
 }
 
+function createErrorResult(err: McpErrorResult): CallToolResult {
+  return {
+    content: [
+      {
+        type: "text",
+        text: `❌ [${err.code}] ${err.message}${err.details ? `\n\nDetails: ${JSON.stringify(err.details, null, 2)}` : ""}`,
+      },
+    ],
+    isError: true,
+  };
+}
+
 function formatPlaybookList(
-  playbooks: { name: string; version: string; description: string; tags?: string[]; trigger: string; argumentHint?: string }[]
+  playbooks: {
+    name: string;
+    version: string;
+    description: string;
+    tags?: string[];
+    trigger: string;
+    argumentHint?: string;
+  }[],
 ): string {
-  const lines: string[] = [
-    `## Available Playbooks (${playbooks.length})\n`,
-  ];
+  const lines: string[] = [`## Available Playbooks (${playbooks.length})\n`];
   for (const p of playbooks) {
     const tags = p.tags && p.tags.length > 0 ? ` [${p.tags.join(", ")}]` : "";
     const trigger = p.trigger !== "manual" ? ` (trigger: ${p.trigger})` : "";
     const hint = p.argumentHint ? ` — ${p.argumentHint}` : "";
-    lines.push(
-      `- **${p.name}**${tags} v${p.version}${trigger}${hint}\n  ${p.description}`
-    );
+    lines.push(`- **${p.name}**${tags} v${p.version}${trigger}${hint}\n  ${p.description}`);
   }
   return lines.join("\n");
 }
 
 function formatStepContext(
   runId: string,
-  ctx: NonNullable<ReturnType<typeof getCurrentStepContext>>
+  ctx: NonNullable<ReturnType<typeof getCurrentStepContext>>,
 ): string {
   const lines: string[] = [
     `## 📋 Playbook Step: ${ctx.step.id}`,
@@ -449,7 +563,7 @@ function formatStepContext(
   if (ctx.gate) {
     lines.push(
       "",
-      `⚠️ **Gate Active:** This step requires **${ctx.gate}** approval before proceeding. The step result should be presented for human review.`
+      `⚠️ **Gate Active:** This step requires **${ctx.gate}** approval before proceeding. The step result should be presented for human review.`,
     );
   }
 
@@ -461,11 +575,13 @@ function formatStepContext(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[openmono-playbooks-mcp] Server started via stdio");
-  console.error("[openmono-playbooks-mcp] Search paths:", process.env.PLAYBOOKS_PATH || "~/.openmono/playbooks, ./.openmono/playbooks");
+  logger.info("index", "Server started via stdio", {});
+  logger.info("index", "Search paths configured", {
+    paths: process.env.PLAYBOOKS_PATH || "~/.openmono/playbooks, ./.openmono/playbooks",
+  });
 }
 
 main().catch((err) => {
-  console.error("[openmono-playbooks-mcp] Fatal error:", err);
+  logger.error("index", "Fatal error", { error: err instanceof Error ? err.message : String(err) });
   process.exit(1);
 });

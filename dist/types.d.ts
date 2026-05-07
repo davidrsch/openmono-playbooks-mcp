@@ -114,7 +114,7 @@ export interface PlaybookRunState {
     /** When execution finished (ISO 8601, null if running) */
     finishedAt: string | null;
     /** Current status */
-    status: "running" | "paused" | "completed" | "failed";
+    status: "in_progress" | "paused" | "completed" | "failed";
     /** Index of the current/most-recently-completed step (0-based) */
     currentStepIndex: number;
     /** Total number of steps */

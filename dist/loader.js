@@ -137,8 +137,10 @@ export function parsePlaybookString(content, filePath) {
         _path: filePath,
         _dir: path.dirname(filePath),
     };
-    // Sort steps topologically if there are dependencies
-    if (definition.steps && definition.steps.length > 1) {
+    // Sort steps topologically if there are dependency edges
+    if (definition.steps &&
+        definition.steps.length > 1 &&
+        definition.steps.some((s) => s.requires.length > 0)) {
         definition.steps = topologicalSort(definition.steps);
     }
     return definition;

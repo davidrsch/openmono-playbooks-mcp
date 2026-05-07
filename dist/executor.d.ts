@@ -47,7 +47,7 @@ export declare function getCurrentStepContext(run: PlaybookRunState): {
     resolvedPrompt: string;
     gate: PlaybookStep["gate"];
     allowedTools: string[];
-} | null;
+} | undefined;
 /**
  * Mark the current step as completed and advance.
  * Persists state for checkpoint/resume support.

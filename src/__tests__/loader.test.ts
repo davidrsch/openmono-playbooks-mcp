@@ -11,10 +11,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  parsePlaybookString,
-  validatePlaybook,
-} from "../loader.js";
+import { parsePlaybookString, validatePlaybook } from "../loader.js";
 
 const MINIMAL_VALID_YAML = `name: minimal
 version: 1.0.0
@@ -45,16 +42,12 @@ describe("parsePlaybookString", () => {
 
   it("throws when name is missing", () => {
     const raw = makePlaybook("version: 1.0.0\ndescription: x");
-    expect(() => parsePlaybookString(raw, "<test>")).toThrow(
-      "missing required 'name' field",
-    );
+    expect(() => parsePlaybookString(raw, "<test>")).toThrow("missing required 'name' field");
   });
 
   it("throws when version is missing", () => {
     const raw = makePlaybook("name: test\ndescription: x");
-    expect(() => parsePlaybookString(raw, "<test>")).toThrow(
-      "missing required 'version' field",
-    );
+    expect(() => parsePlaybookString(raw, "<test>")).toThrow("missing required 'version' field");
   });
 
   it("throws when description is missing", () => {
@@ -290,9 +283,7 @@ steps:
 `);
     const def = parsePlaybookString(raw, "<test>");
     const issues = validatePlaybook(def);
-    const depIssue = issues.find((i) =>
-      i.message.includes("non-existent step"),
-    );
+    const depIssue = issues.find((i) => i.message.includes("non-existent step"));
     expect(depIssue).toBeDefined();
     expect(depIssue!.severity).toBe("error");
   });

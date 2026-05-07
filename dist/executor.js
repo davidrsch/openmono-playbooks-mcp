@@ -26,11 +26,15 @@ const MAX_RESTORE_DEPTH = 3;
 const activeRuns = new Map();
 let activeRunsLock = false;
 function withMutex(fn) {
-    // Simple spinlock guard for in-process concurrent access
-    // In a single-threaded Node.js environment this is primarily a safety measure
-    // against re-entrant calls (e.g. from recursive restore logic).
+    // NOTE: This is a simple spinlock, not a true mutex.
+    // In Node.js's single-threaded synchronous execution model, synchronous
+    // code cannot be interrupted, so this provides re-entrant safety for
+    // recursive calls (e.g., from checkpoint restore logic) but does NOT
+    // protect against concurrent access from async interleaving.
+    // If async I/O is introduced within locked sections, this should be
+    // replaced with a proper async mutex (e.g., using a promise queue).
     if (activeRunsLock) {
-        logger.warn("executor", "Mutex contention on activeRuns", {});
+        logger.warn("executor", "Re-entrant call detected on activeRuns", {});
     }
     activeRunsLock = true;
     try {
@@ -86,7 +90,7 @@ export function runValidate(name, params) {
                 paramErrors.push(`Missing required parameter: ${key}`);
             }
             if (key in params) {
-                const val = params[key];
+                const val = coerceParamValue(key, params[key], paramDef);
                 const err = validateParamValue(key, val, paramDef);
                 if (err)
                     paramErrors.push(err);
@@ -106,7 +110,7 @@ export function runValidate(name, params) {
 export function startRun(playbookName, params = {}) {
     const pb = loadPlaybook(playbookName);
     if (!pb) {
-        return { run: createEmptyRun("", ""), error: `Playbook '${playbookName}' not found` };
+        return { run: createEmptyRun("", ""), error: "Playbook not found" };
     }
     // Detect unknown parameters
     if (pb.parameters) {
@@ -134,10 +138,11 @@ export function startRun(playbookName, params = {}) {
                 }
             }
             if (key in params) {
-                const val = params[key];
-                const err = validateParamValue(key, val, paramDef);
+                const coerced = coerceParamValue(key, params[key], paramDef);
+                const err = validateParamValue(key, coerced, paramDef);
                 if (err)
                     return { run: createEmptyRun("", ""), error: err };
+                params[key] = coerced;
             }
         }
     }
@@ -157,7 +162,7 @@ export function startRun(playbookName, params = {}) {
         playbookVersion: pb.version,
         startedAt: new Date().toISOString(),
         finishedAt: null,
-        status: "running",
+        status: "in_progress",
         currentStepIndex: 0,
         totalSteps: steps.length,
         params,
@@ -169,7 +174,7 @@ export function startRun(playbookName, params = {}) {
     };
     activeRuns.set(runId, run);
     persistRun(run);
-    logger.info("executor", `Started playbook run: ${playbookName}`, { runId });
+    logger.info("executor", `Started playbook run: ${playbookName}`, { runId, playbookName });
     return { run };
 }
 /**
@@ -179,10 +184,10 @@ export function startRun(playbookName, params = {}) {
 export function getCurrentStepContext(run) {
     const pb = loadPlaybook(run.playbookName);
     if (!pb)
-        return null;
+        return undefined;
     const steps = pb.steps ?? [];
     if (run.currentStepIndex >= steps.length)
-        return null;
+        return undefined;
     const step = steps[run.currentStepIndex];
     // Build template context
     const ctx = {
@@ -252,8 +257,8 @@ export function completeCurrentStep(runId, output, error, _depth = 0) {
             run.error = error;
             run.finishedAt = new Date().toISOString();
             persistRun(run);
-            logger.info("executor", `Step failed: ${step?.id}`, { runId, error });
-            return { run, nextStepContext: null };
+            logger.info("executor", `Step failed: ${step?.id}`, { runId, stepId: step?.id, error });
+            return { run, nextStepContext: undefined };
         }
         stepResult.status = "completed";
         stepResult.output = output;
@@ -268,8 +273,12 @@ export function completeCurrentStep(runId, output, error, _depth = 0) {
             run.status = "completed";
             run.finishedAt = new Date().toISOString();
             persistRun(run);
-            logger.info("executor", `Playbook run completed: ${run.playbookName}`, { runId });
-            return { run, nextStepContext: null };
+            logger.info("executor", `Playbook run completed: ${run.playbookName}`, {
+                runId,
+                playbookName: run.playbookName,
+                totalSteps: run.totalSteps,
+            });
+            return { run, nextStepContext: undefined };
         }
         // Advance to next step
         run.stepResults[run.currentStepIndex] = {
@@ -309,7 +318,7 @@ export function skipCurrentStep(runId, _depth = 0) {
             run.status = "completed";
             run.finishedAt = new Date().toISOString();
             persistRun(run);
-            return { run, nextStepContext: null };
+            return { run, nextStepContext: undefined };
         }
         run.stepResults[run.currentStepIndex] = {
             ...run.stepResults[run.currentStepIndex],
@@ -335,9 +344,10 @@ export function resumeRun(runId) {
             activeRuns.set(runId, run);
         }
         if (run.status === "completed") {
-            return { error: `Run '${runId}' is already completed` };
+            // Already finished — return the run with no next step context
+            return { run, stepContext: undefined };
         }
-        run.status = "running";
+        run.status = "in_progress";
         // Set current step as running if it's pending
         if (run.currentStepIndex < run.stepResults.length &&
             run.stepResults[run.currentStepIndex].status === "pending") {
@@ -345,7 +355,11 @@ export function resumeRun(runId) {
             run.stepResults[run.currentStepIndex].startedAt = new Date().toISOString();
         }
         persistRun(run);
-        logger.info("executor", `Resumed playbook run: ${run.playbookName}`, { runId });
+        logger.info("executor", `Resumed playbook run: ${run.playbookName}`, {
+            runId,
+            playbookName: run.playbookName,
+            currentStepIndex: run.currentStepIndex,
+        });
         const stepContext = getCurrentStepContext(run);
         return { run, stepContext };
     });
@@ -361,6 +375,54 @@ export function getRunState(runId) {
     if (persisted)
         return persisted;
     return { error: `Run '${runId}' not found` };
+}
+// ─── Parameter Coercion ──────────────────────────────────────
+/**
+ * Coerce a raw input value to the expected parameter type.
+ * This is a best-effort coercion for CLI/HTTP inputs where everything
+ * is a string. It does NOT change the original params — callers should
+ * use the returned coerced value for validation & storage.
+ */
+function coerceParamValue(key, value, def) {
+    if (value === undefined || value === null)
+        return value;
+    switch (def.type) {
+        case "Number": {
+            if (typeof value === "number")
+                return value;
+            if (typeof value === "string") {
+                const n = Number(value);
+                if (!isNaN(n))
+                    return n;
+            }
+            return value; // let validation fail
+        }
+        case "Boolean": {
+            if (typeof value === "boolean")
+                return value;
+            if (typeof value === "string") {
+                const lower = value.toLowerCase();
+                if (lower === "true")
+                    return true;
+                if (lower === "false")
+                    return false;
+            }
+            return value; // let validation fail
+        }
+        case "Array": {
+            if (Array.isArray(value))
+                return value;
+            if (typeof value === "string") {
+                return value
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter((s) => s.length > 0);
+            }
+            return value; // let validation fail
+        }
+        default:
+            return value;
+    }
 }
 // ─── Parameter Validation ────────────────────────────────────
 function validateParamValue(key, value, def) {
@@ -414,6 +476,7 @@ function persistRun(run) {
     }
     catch (err) {
         logger.error("executor", `Failed to persist run ${run.runId}`, {
+            runId: run.runId,
             error: err instanceof Error ? err.message : String(err),
         });
     }
@@ -427,7 +490,7 @@ function loadPersistedRun(runId) {
         return JSON.parse(raw);
     }
     catch {
-        logger.warn("executor", `Failed to load persisted run: ${runId}`, {});
+        logger.warn("executor", `Failed to load persisted run: ${runId}`, { runId });
         return null;
     }
 }

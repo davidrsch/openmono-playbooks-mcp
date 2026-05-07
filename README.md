@@ -1,4 +1,4 @@
-# OpenMono Playbooks MCP
+# OpenMono Playbooks MCP <img src="logo.png" alt="Extension image" width="140" align="right" style="margin: 0 1em 0 1em"/>
 
 **MCP server that exposes [OpenMono Playbooks](https://github.com/StartupHakk/OpenMonoAgent.ai) — typed, multi-step AI workflows with human-in-the-loop gates, checkpointing, and composability — to any MCP-compatible agent.**
 
@@ -60,15 +60,15 @@ You are a Git commit assistant. Your job is to:
 Playbooks and MCP are **complementary**: MCP provides tools, Playbooks orchestrate their use across multi-step workflows with safety gates.
 
 ```
-┌──────────────────────────────────────────────┐
+┌───────────────────────────────────────────────┐
 │  PLAYBOOKS                                    │
 │  "What to do, in what order, with what checks"│
 │  (Workflow orchestration layer)               │
-├──────────────────────────────────────────────┤
+├───────────────────────────────────────────────┤
 │  TOOLS + MCP                                  │
 │  "What capabilities are available"            │
 │  (Capability layer)                           │
-└──────────────────────────────────────────────┘
+└───────────────────────────────────────────────┘
 ```
 
 ## MCP Server Tools
@@ -94,8 +94,8 @@ This server exposes the following tools to any MCP-compatible agent:
 
 ```bash
 # Clone this repo
-git clone https://github.com/davidrsch/openmono-playbooks-mcp.git
-cd openmono-playbooks-mcp
+git clone https://github.com/davidrsch/playbooks-mcp.git
+cd playbooks-mcp
 
 # Install dependencies
 npm install
@@ -111,9 +111,9 @@ Add to your MCP agent's configuration (e.g., `cline_mcp_settings.json` or `claud
 ```json
 {
   "mcpServers": {
-    "openmono-playbooks": {
+    "playbooks-mcp": {
       "command": "node",
-      "args": ["path/to/openmono-playbooks-mcp/dist/index.js"],
+      "args": ["path/to/playbooks-mcp/dist/index.js"],
       "env": {
         "PLAYBOOKS_PATH": "~/.openmono/playbooks"
       }

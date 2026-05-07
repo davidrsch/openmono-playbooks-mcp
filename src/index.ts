@@ -26,6 +26,9 @@ import {
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import * as fs from "node:fs";
+import * as path from "node:path";
+
 import {
   listPlaybooks,
   startRun,
@@ -36,6 +39,7 @@ import {
   runValidate,
   getCurrentStepContext,
 } from "./executor.js";
+import { resolveSearchPaths } from "./loader.js";
 import { ErrorCode, makeError, type McpErrorResult } from "./errors.js";
 import { logger } from "./logger.js";
 
@@ -50,7 +54,10 @@ const RATE_LIMIT_WINDOW_MS = 100;
 /** Maps a coarse session key to the last request timestamp */
 const rateLimitMap = new Map<string, number>();
 
-function checkInputSize(name: string, args: Record<string, unknown> | undefined): McpErrorResult | null {
+function checkInputSize(
+  name: string,
+  args: Record<string, unknown> | undefined,
+): McpErrorResult | null {
   const raw = JSON.stringify(args ?? {});
   if (Buffer.byteLength(raw, "utf-8") > MAX_INPUT_SIZE) {
     return makeError(
@@ -83,7 +90,7 @@ function checkRateLimit(): McpErrorResult | null {
 
 const server = new Server(
   {
-    name: "openmono-playbooks-mcp",
+    name: "playbooks-mcp",
     version: "1.0.0",
   },
   {
@@ -273,27 +280,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case "health_check": {
-        const searchPaths = (await (async () => {
-          try {
-            const { resolveSearchPaths } = await import("./loader.js");
-            return resolveSearchPaths();
-          } catch {
-            return [];
-          }
-        })()) as string[];
+        let searchPaths: string[] = [];
+        try {
+          searchPaths = resolveSearchPaths();
+        } catch {
+          // ignore — return empty list if discovery fails
+        }
         const uptimeSec = Math.floor((Date.now() - serverStartTime) / 1000);
         // Count persisted runs on disk for a rough active-count metric
         let persistedRuns = 0;
         try {
-          const nodeFs = await import("node:fs");
-          const nodePath = await import("node:path");
-          const stateDir = nodePath.join(
+          const stateDir = path.join(
             process.env.HOME ?? process.env.USERPROFILE ?? "",
             ".openmono",
             "state",
           );
-          if (nodeFs.existsSync(stateDir)) {
-            persistedRuns = nodeFs.readdirSync(stateDir).filter((f: string) => f.endsWith(".json")).length;
+          if (fs.existsSync(stateDir)) {
+            persistedRuns = fs
+              .readdirSync(stateDir)
+              .filter((f: string) => f.endsWith(".json")).length;
           }
         } catch {
           // ignore

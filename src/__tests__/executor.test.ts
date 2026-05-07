@@ -377,4 +377,3 @@ describe("template resolution", () => {
     }
   });
 });
-

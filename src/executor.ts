@@ -44,11 +44,15 @@ const activeRuns = new Map<string, PlaybookRunState>();
 let activeRunsLock = false;
 
 function withMutex<T>(fn: () => T): T {
-  // Simple spinlock guard for in-process concurrent access
-  // In a single-threaded Node.js environment this is primarily a safety measure
-  // against re-entrant calls (e.g. from recursive restore logic).
+  // NOTE: This is a simple spinlock, not a true mutex.
+  // In Node.js's single-threaded synchronous execution model, synchronous
+  // code cannot be interrupted, so this provides re-entrant safety for
+  // recursive calls (e.g., from checkpoint restore logic) but does NOT
+  // protect against concurrent access from async interleaving.
+  // If async I/O is introduced within locked sections, this should be
+  // replaced with a proper async mutex (e.g., using a promise queue).
   if (activeRunsLock) {
-    logger.warn("executor", "Mutex contention on activeRuns", {});
+    logger.warn("executor", "Re-entrant call detected on activeRuns", {});
   }
   activeRunsLock = true;
   try {
@@ -207,7 +211,7 @@ export function startRun(
 
   activeRuns.set(runId, run);
   persistRun(run);
-  logger.info("executor", `Started playbook run: ${playbookName}`, { runId });
+  logger.info("executor", `Started playbook run: ${playbookName}`, { runId, playbookName });
 
   return { run };
 }
@@ -216,14 +220,16 @@ export function startRun(
  * Get the context for the current step.
  * This is what the MCP server returns to the agent so it knows what to do next.
  */
-export function getCurrentStepContext(run: PlaybookRunState): {
-  step: PlaybookStep;
-  stepIndex: number;
-  systemPrompt: string;
-  resolvedPrompt: string;
-  gate: PlaybookStep["gate"];
-  allowedTools: string[];
-} | undefined {
+export function getCurrentStepContext(run: PlaybookRunState):
+  | {
+      step: PlaybookStep;
+      stepIndex: number;
+      systemPrompt: string;
+      resolvedPrompt: string;
+      gate: PlaybookStep["gate"];
+      allowedTools: string[];
+    }
+  | undefined {
   const pb = loadPlaybook(run.playbookName);
   if (!pb) return undefined;
 
@@ -312,7 +318,7 @@ export function completeCurrentStep(
       run.error = error;
       run.finishedAt = new Date().toISOString();
       persistRun(run);
-      logger.info("executor", `Step failed: ${step?.id}`, { runId, error });
+      logger.info("executor", `Step failed: ${step?.id}`, { runId, stepId: step?.id, error });
       return { run, nextStepContext: undefined };
     }
 
@@ -332,7 +338,11 @@ export function completeCurrentStep(
       run.status = "completed";
       run.finishedAt = new Date().toISOString();
       persistRun(run);
-      logger.info("executor", `Playbook run completed: ${run.playbookName}`, { runId });
+      logger.info("executor", `Playbook run completed: ${run.playbookName}`, {
+        runId,
+        playbookName: run.playbookName,
+        totalSteps: run.totalSteps,
+      });
       return { run, nextStepContext: undefined };
     }
 
@@ -434,7 +444,11 @@ export function resumeRun(
     }
 
     persistRun(run);
-    logger.info("executor", `Resumed playbook run: ${run.playbookName}`, { runId });
+    logger.info("executor", `Resumed playbook run: ${run.playbookName}`, {
+      runId,
+      playbookName: run.playbookName,
+      currentStepIndex: run.currentStepIndex,
+    });
 
     const stepContext = getCurrentStepContext(run);
     return { run, stepContext };
@@ -462,11 +476,7 @@ export function getRunState(runId: string): PlaybookRunState | { error: string }
  * is a string. It does NOT change the original params — callers should
  * use the returned coerced value for validation & storage.
  */
-function coerceParamValue(
-  key: string,
-  value: unknown,
-  def: { type: string },
-): unknown {
+function coerceParamValue(key: string, value: unknown, def: { type: string }): unknown {
   if (value === undefined || value === null) return value;
 
   switch (def.type) {
@@ -560,6 +570,7 @@ function persistRun(run: PlaybookRunState): void {
     fs.writeFileSync(filePath, JSON.stringify(run, null, 2), "utf-8");
   } catch (err) {
     logger.error("executor", `Failed to persist run ${run.runId}`, {
+      runId: run.runId,
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -572,7 +583,7 @@ function loadPersistedRun(runId: string): PlaybookRunState | null {
     const raw = fs.readFileSync(filePath, "utf-8");
     return JSON.parse(raw) as PlaybookRunState;
   } catch {
-    logger.warn("executor", `Failed to load persisted run: ${runId}`, {});
+    logger.warn("executor", `Failed to load persisted run: ${runId}`, { runId });
     return null;
   }
 }

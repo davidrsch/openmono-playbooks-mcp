@@ -265,9 +265,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 if (result.valid) {
                     return createTextResult(`✅ Playbook "${pbName}" is valid. No issues found.`);
                 }
-                const lines = [
-                    `⚠️ Playbook "${pbName}" has issues:\n`,
-                ];
+                const lines = [`⚠️ Playbook "${pbName}" has issues:\n`];
                 for (const issue of result.issues) {
                     const icon = issue.severity === "error" ? "🔴" : "🟡";
                     lines.push(`- ${icon} [${issue.severity}] ${issue.field}: ${issue.message}`);
@@ -296,9 +294,7 @@ function createTextResult(text, isError = false) {
     };
 }
 function formatPlaybookList(playbooks) {
-    const lines = [
-        `## Available Playbooks (${playbooks.length})\n`,
-    ];
+    const lines = [`## Available Playbooks (${playbooks.length})\n`];
     for (const p of playbooks) {
         const tags = p.tags && p.tags.length > 0 ? ` [${p.tags.join(", ")}]` : "";
         const trigger = p.trigger !== "manual" ? ` (trigger: ${p.trigger})` : "";

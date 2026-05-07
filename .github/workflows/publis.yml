@@ -49,7 +49,7 @@ jobs:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
 
       - name: Package VSIX artifact
-        run: npm run package
+        run: npx vsce package --no-dependencies
 
       - name: Upload VSIX to GitHub Release
         uses: softprops/action-gh-release@v2

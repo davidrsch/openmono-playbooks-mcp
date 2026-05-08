@@ -45,6 +45,15 @@ jobs:
       - name: Package VSIX artifact
         run: npm run package
 
+      - name: Rename VSIX with release name
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          for f in *.vsix; do
+            new_name="playbooks-mcp-${GITHUB_REF#refs/tags/}.vsix"
+            mv "$f" "$new_name"
+            echo "Renamed to $new_name"
+          done
+
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:

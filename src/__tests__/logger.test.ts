@@ -17,7 +17,6 @@ describe("logger", () => {
 
   beforeEach(() => {
     capturedOutput = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.spyOn(process.stderr, "write").mockImplementation(((
       chunk: string | Uint8Array,
     ): boolean => {

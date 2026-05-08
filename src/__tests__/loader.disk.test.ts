@@ -19,6 +19,7 @@ import {
   loadPlaybook,
   validatePlaybook,
 } from "../loader.js";
+import type { PlaybookDefinition } from "../types.js";
 
 const TEST_DIR = path.join(os.tmpdir(), `playbooks-mcp-loader-test-${Date.now()}`);
 const PLAYBOOKS_DIR = path.join(TEST_DIR, ".openmono", "playbooks");
@@ -623,17 +624,17 @@ describe("validatePlaybook", () => {
       name: "test",
       version: "1.0.0",
       description: "test",
-      trigger: "manual",
+      trigger: "manual" as const,
       steps: [
         {
           id: "step-01",
-          requires: [],
-        } as any,
+          requires: [] as string[],
+        } as const,
       ],
       body: "test",
       _path: "/fake/PLAYBOOK.md",
       _dir: "/fake",
-    });
+    } as PlaybookDefinition);
     expect(issues.some((i) => i.message.includes("no file, inline-prompt, or playbook"))).toBe(
       true,
     );
@@ -644,18 +645,18 @@ describe("validatePlaybook", () => {
       name: "test",
       version: "1.0.0",
       description: "test",
-      trigger: "manual",
+      trigger: "manual" as const,
       steps: [
         {
           id: "step-01",
           requires: ["non-existent-step"],
           "inline-prompt": "do stuff",
-        } as any,
+        } as const,
       ],
       body: "test",
       _path: "/fake/PLAYBOOK.md",
       _dir: "/fake",
-    });
+    } as PlaybookDefinition);
     expect(issues.some((i) => i.message.includes("non-existent step"))).toBe(true);
   });
 

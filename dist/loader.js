@@ -376,8 +376,7 @@ function detectCircularDependency(startName, depMap) {
     const stack = [];
     function dfs(name) {
         if (stack.includes(name)) {
-            // Found cycle — extract the cycle portion
-            const cycleStart = stack.indexOf(name);
+            // Found cycle — return true to unwind stack for extraction
             return true;
         }
         if (visited.has(name))

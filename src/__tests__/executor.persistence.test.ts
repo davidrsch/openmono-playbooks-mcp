@@ -21,7 +21,6 @@ import {
   skipCurrentStep,
   resumeRun,
   getRunState,
-  clearActiveRuns,
 } from "../executor.js";
 import * as fs from "node:fs";
 import * as path from "node:path";

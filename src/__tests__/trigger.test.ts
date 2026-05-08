@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { matchTrigger, findBestMatch, type TriggerMatch } from "../trigger.js";
+import { matchTrigger, findBestMatch } from "../trigger.js";
 import type { PlaybookDefinition } from "../types.js";
 
 function makePb(overrides: Partial<PlaybookDefinition> = {}): PlaybookDefinition {

@@ -402,7 +402,99 @@ describe("gate enforcement", () => {
     expect(result.error).toMatch(/not awaiting a gate/i);
   });
 });
-// ── Template resolution ───────────────────────────────────────
+
+// ── Auto-retry ────────────────────────────────────────────────
+
+describe("auto_retry", () => {
+  it("retries a failed step when auto_retry is enabled", async () => {
+    const start = await startRun("test-auto-retry", {});
+    expect(start.error).toBeUndefined();
+    const runId = start.run!.runId;
+
+    // Fail the step — should retry instead of terminating
+    const result = await completeCurrentStep(runId, undefined, "temporary error");
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+
+    // Run should still be in_progress (not failed) due to auto_retry
+    expect(result.run.status).toBe("in_progress");
+    expect(result.nextStepContext).toBeDefined();
+    expect(result.run.stepResults[0].retryCount).toBe(1);
+  });
+
+  it("fails permanently after max retries", async () => {
+    const start = await startRun("test-auto-retry", {});
+    expect(start.error).toBeUndefined();
+    const runId = start.run!.runId;
+
+    // Fail 3 times (retries 1-3), 4th failure sticks
+    for (let i = 1; i <= 3; i++) {
+      const r = await completeCurrentStep(runId, undefined, `error ${i}`);
+      expect("error" in r).toBe(false);
+      if ("error" in r) return;
+      expect(r.run.status).toBe("in_progress");
+      expect(r.run.stepResults[0].retryCount).toBe(i);
+    }
+    // 4th error — max retries exceeded
+    const result = await completeCurrentStep(runId, undefined, "final error");
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.run.status).toBe("failed");
+    expect(result.run.error).toMatch(/Max retries/);
+  });
+});
+
+// ── Timeout ───────────────────────────────────────────────────
+
+describe("step timeout", () => {
+  it("auto-fails a step that exceeds its timeout", async () => {
+    const start = await startRun("test-timeout", {});
+    expect(start.error).toBeUndefined();
+    const runId = start.run!.runId;
+
+    // Force the step's startedAt far into the past to trigger timeout
+    const run = start.run!;
+    run.stepResults[0].startedAt = new Date(Date.now() - 61_000).toISOString(); // 61s ago
+
+    const result = await completeCurrentStep(runId);
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.run.status).toBe("failed");
+    expect(result.run.error).toMatch(/timed out/i);
+  });
+});
+
+// ── Context modes ─────────────────────────────────────────────
+
+describe("context modes", () => {
+  it("Full mode includes the playbook body", async () => {
+    const start = await startRun("test-minimal", {});
+    expect(start.error).toBeUndefined();
+    const ctx = getCurrentStepContext(start.run!);
+    expect(ctx).toBeDefined();
+    // Full mode (default) should include the system prompt body
+    expect(ctx!.systemPrompt.length).toBeGreaterThan(10);
+    expect(ctx!.systemPrompt).not.toMatch(/Selective context mode/);
+  });
+
+  it("Selective mode omits the playbook body", async () => {
+    const start = await startRun("test-selective", {});
+    expect(start.error).toBeUndefined();
+    const ctx = getCurrentStepContext(start.run!);
+    expect(ctx).toBeDefined();
+    expect(ctx!.systemPrompt).toMatch(/Selective context mode/);
+  });
+
+  it("Fork mode includes fork hint", async () => {
+    const start = await startRun("test-fork", {});
+    expect(start.error).toBeUndefined();
+    const ctx = getCurrentStepContext(start.run!);
+    expect(ctx).toBeDefined();
+    expect(ctx!.systemPrompt).toMatch(/Fork context mode/);
+  });
+});
+
+// ─── Template resolution ───────────────────────────────────────
 
 describe("template resolution", () => {
   it("resolves {{params.*}} in step prompts", async () => {

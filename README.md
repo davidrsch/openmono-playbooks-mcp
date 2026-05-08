@@ -1,5 +1,8 @@
 # Playbooks MCP <img src="logo.png" alt="Extension image" width="140" align="right" style="margin: 0 1em 0 1em"/>
 
+[![Install in VS Code](https://img.shields.io/static/v1?label=VS%20Code&message=Install&color=007ACC&style=for-the-badge&logo=visualstudiocode)](vscode:extension/davidrsch.playbooks-mcp)
+[![Install on Open VSX](https://img.shields.io/static/v1?label=Open%20VSX&message=Install&color=A60EE5&style=for-the-badge)](https://open-vsx.org/extension/davidrsch/playbooks-mcp)
+
 **MCP server that exposes [OpenMono Playbooks](https://github.com/StartupHakk/OpenMonoAgent.ai) — typed, multi-step AI workflows with human-in-the-loop gates, checkpointing, and composability — to any MCP-compatible agent.**
 
 > Inspired by and derived from the [OpenMonoAgent.ai](https://github.com/StartupHakk/OpenMonoAgent.ai) playbook engine. See [ATTRIBUTION.md](ATTRIBUTION.md).
@@ -75,16 +78,16 @@ Playbooks and MCP are **complementary**: MCP provides tools, Playbooks orchestra
 
 This server exposes the following tools to any MCP-compatible agent:
 
-| Tool                 | Description                                                                     |
-| -------------------- | ------------------------------------------------------------------------------- |
-| `list_playbooks`     | Discover all available playbooks with names, descriptions, parameters, and tags |
-| `run_playbook`       | Execute a playbook by name with typed parameters; streams step-by-step status   |
-| `complete_step`      | Mark the current playbook step as completed and advance to the next             |
-| `skip_step`          | Skip the current step and advance                                               |
-| `fail_step`          | Mark the current step as failed and terminate the playbook run                  |
-| `resume_playbook`    | Resume an interrupted playbook from its last checkpoint                         |
-| `get_playbook_state` | Inspect current or final state of a playbook run                                |
-| `validate_playbook`  | Dry-run validation — check syntax, parameters, and step dependencies            |
+| Tool                 | Description                                                                      |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `list_playbooks`     | Discover all available playbooks with names, descriptions, parameters, and tags  |
+| `run_playbook`       | Execute a playbook by name with typed parameters; streams step-by-step status    |
+| `complete_step`      | Mark the current playbook step as completed and advance to the next              |
+| `skip_step`          | Skip the current step and advance                                                |
+| `fail_step`          | Mark the current step as failed and terminate the playbook run                   |
+| `resume_playbook`    | Resume an interrupted playbook from its last checkpoint                          |
+| `get_playbook_state` | Inspect current or final state of a playbook run                                 |
+| `validate_playbook`  | Dry-run validation — check syntax, parameters, and step dependencies             |
 | `acknowledge_gate`   | Acknowledge a human-in-the-loop gate (Confirm, Review, Approve) on a paused step |
 | `match_playbook`     | Match user input against playbook trigger patterns with weighted scoring         |
 | `health_check`       | Server readiness probe — status, uptime, active runs, search paths               |

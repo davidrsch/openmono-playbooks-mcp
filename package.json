@@ -4,18 +4,40 @@
   "publisher": "davidrsch",
   "icon": "logo.png",
   "description": "MCP server that exposes OpenMono Playbooks — typed, multi-step AI workflows with human-in-the-loop gates, checkpointing, and composability — to any MCP-compatible agent.",
-  "main": "dist/index.js",
+  "main": "dist/extension.js",
   "type": "module",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.js",
+      "import": "./dist/extension.js",
+      "require": "./dist/extension.js",
       "types": "./dist/index.d.ts"
+    },
+    "./server": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     }
   },
   "activationEvents": [
     "onStartupFinished"
   ],
+  "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "playbooks-mcp",
+        "label": "Playbooks MCP"
+      }
+    ],
+    "configuration": {
+      "title": "Playbooks MCP",
+      "properties": {
+        "playbooks.searchPath": {
+          "type": "string",
+          "default": "~/.openmono/playbooks",
+          "description": "Search path for playbook discovery. Multiple paths separated by path delimiter."
+        }
+      }
+    }
+  },
   "engines": {
     "node": ">=18.0.0",
     "vscode": "^1.60.0"
@@ -59,6 +81,7 @@
     "@eslint/js": "^9.39.4",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.19.17",
+    "@types/vscode": "^1.118.0",
     "@vscode/vsce": "^3.9.1",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",

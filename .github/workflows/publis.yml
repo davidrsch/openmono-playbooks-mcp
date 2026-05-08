@@ -89,5 +89,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: "playbooks-mcp ${{ github.ref_name }}"
           files: "*.vsix"
           generate_release_notes: true

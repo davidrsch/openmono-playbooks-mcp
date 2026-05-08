@@ -26,13 +26,6 @@
   "bugs": {
     "url": "https://github.com/davidrsch/playbooks-mcp/issues"
   },
-  "files": [
-    "dist/",
-    "logo.png",
-    "README.md",
-    "LICENSE",
-    "ATTRIBUTION.md"
-  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",

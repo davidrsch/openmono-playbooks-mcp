@@ -32,10 +32,10 @@ export declare function runValidate(name: string, params?: Record<string, unknow
  * Initialize a new playbook run.
  * Validates parameters, creates state, persists a checkpoint.
  */
-export declare function startRun(playbookName: string, params?: Record<string, unknown>): {
+export declare function startRun(playbookName: string, params?: Record<string, unknown>): Promise<{
     run: PlaybookRunState;
     error?: string;
-};
+}>;
 /**
  * Get the context for the current step.
  * This is what the MCP server returns to the agent so it knows what to do next.
@@ -52,33 +52,48 @@ export declare function getCurrentStepContext(run: PlaybookRunState): {
  * Mark the current step as completed and advance.
  * Persists state for checkpoint/resume support.
  */
-export declare function completeCurrentStep(runId: string, output?: string, error?: string, _depth?: number): {
+export declare function completeCurrentStep(runId: string, output?: string, error?: string, _depth?: number): Promise<{
     run: PlaybookRunState;
     nextStepContext: ReturnType<typeof getCurrentStepContext>;
 } | {
     error: string;
-};
+}>;
 /**
  * Mark the current step as skipped.
  */
-export declare function skipCurrentStep(runId: string, _depth?: number): {
+export declare function skipCurrentStep(runId: string, _depth?: number): Promise<{
     run: PlaybookRunState;
     nextStepContext: ReturnType<typeof getCurrentStepContext>;
 } | {
     error: string;
-};
+}>;
 /**
  * Resume an interrupted run from its last checkpoint.
  */
-export declare function resumeRun(runId: string): {
+export declare function resumeRun(runId: string): Promise<{
     run: PlaybookRunState;
     stepContext: ReturnType<typeof getCurrentStepContext>;
 } | {
     error: string;
-};
+}>;
 /**
  * Get the full state of a run (active or persisted).
  */
 export declare function getRunState(runId: string): PlaybookRunState | {
     error: string;
 };
+/**
+ * Clear all in-memory active runs. Used by tests for clean state between cases.
+ * This does NOT delete persisted checkpoint files on disk.
+ */
+export declare function clearActiveRuns(): void;
+/**
+ * Acknowledge a human-in-the-loop gate for the current paused step.
+ * After acknowledgment, the step is marked completed and the run advances.
+ */
+export declare function acknowledgeGate(runId: string, output?: string): Promise<{
+    run: PlaybookRunState;
+    nextStepContext: ReturnType<typeof getCurrentStepContext>;
+} | {
+    error: string;
+}>;

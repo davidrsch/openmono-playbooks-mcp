@@ -22,26 +22,96 @@ const STATE_FILE_PREFIX = "playbook-run-";
 /** Maximum recursion depth for restore-and-retry loops */
 const MAX_RESTORE_DEPTH = 3;
 // ─── Active Runs ─────────────────────────────────────────────
-/** In-memory cache of active runs — guarded by a simple mutex */
+/** In-memory cache of active runs — guarded by an async mutex */
 const activeRuns = new Map();
-let activeRunsLock = false;
-function withMutex(fn) {
-    // NOTE: This is a simple spinlock, not a true mutex.
-    // In Node.js's single-threaded synchronous execution model, synchronous
-    // code cannot be interrupted, so this provides re-entrant safety for
-    // recursive calls (e.g., from checkpoint restore logic) but does NOT
-    // protect against concurrent access from async interleaving.
-    // If async I/O is introduced within locked sections, this should be
-    // replaced with a proper async mutex (e.g., using a promise queue).
-    if (activeRunsLock) {
-        logger.warn("executor", "Re-entrant call detected on activeRuns", {});
+/** Maximum number of runs to keep in memory before evicting the oldest completed/failed ones */
+const MAX_ACTIVE_RUNS = parseInt(process.env.MAX_ACTIVE_RUNS ?? "1000", 10);
+/**
+ * Async mutex using a promise queue.
+ * Provides serialized access to the activeRuns map, safe for async interleaving
+ * if I/O is introduced within locked sections in the future.
+ * Supports re-entrant acquisition by the same async context (used by
+ * checkpoint restore logic that may recurse into the same function).
+ */
+class AsyncMutex {
+    locked = false;
+    queue = [];
+    reentrantDepth = 0;
+    async acquire() {
+        // Re-entrant: if already locked by this async execution context, bump depth
+        if (this.locked && this.reentrantDepth > 0) {
+            this.reentrantDepth++;
+            return;
+        }
+        if (!this.locked) {
+            this.locked = true;
+            this.reentrantDepth = 1;
+            return;
+        }
+        return new Promise((resolve) => {
+            this.queue.push(() => {
+                this.reentrantDepth = 1;
+                resolve();
+            });
+        });
     }
-    activeRunsLock = true;
+    release() {
+        this.reentrantDepth--;
+        if (this.reentrantDepth > 0)
+            return;
+        if (this.queue.length > 0) {
+            const next = this.queue.shift();
+            next();
+        }
+        else {
+            this.locked = false;
+        }
+    }
+}
+const runMutex = new AsyncMutex();
+async function withMutex(fn) {
+    await runMutex.acquire();
     try {
-        return fn();
+        return await fn();
     }
     finally {
-        activeRunsLock = false;
+        runMutex.release();
+    }
+}
+/**
+ * Evict the oldest completed or failed runs from memory if the cache
+ * exceeds MAX_ACTIVE_RUNS. Completed/failed runs are always persisted
+ * to disk, so eviction is safe.
+ */
+function evictIfNeeded() {
+    if (activeRuns.size <= MAX_ACTIVE_RUNS)
+        return;
+    const excess = activeRuns.size - MAX_ACTIVE_RUNS;
+    // Prefer evicting completed/failed runs first (oldest finishedAt)
+    const evictCandidates = Array.from(activeRuns.entries())
+        .filter(([, r]) => r.status === "completed" || r.status === "failed")
+        .sort((a, b) => {
+        const aTime = a[1].finishedAt ?? a[1].startedAt;
+        const bTime = b[1].finishedAt ?? b[1].startedAt;
+        return aTime.localeCompare(bTime);
+    });
+    for (let i = 0; i < Math.min(excess, evictCandidates.length); i++) {
+        activeRuns.delete(evictCandidates[i][0]);
+        logger.debug("executor", `Evicted completed/failed run from memory`, {
+            runId: evictCandidates[i][0],
+        });
+    }
+    // If still over limit, evict oldest in-progress/paused runs
+    if (activeRuns.size > MAX_ACTIVE_RUNS) {
+        const remaining = Array.from(activeRuns.entries())
+            .sort((a, b) => a[1].startedAt.localeCompare(b[1].startedAt));
+        const stillExcess = activeRuns.size - MAX_ACTIVE_RUNS;
+        for (let i = 0; i < stillExcess; i++) {
+            activeRuns.delete(remaining[i][0]);
+            logger.warn("executor", `Evicted in-progress run from memory (over capacity)`, {
+                runId: remaining[i][0],
+            });
+        }
     }
 }
 // ─── Public API ──────────────────────────────────────────────
@@ -107,7 +177,7 @@ export function runValidate(name, params) {
  * Initialize a new playbook run.
  * Validates parameters, creates state, persists a checkpoint.
  */
-export function startRun(playbookName, params = {}) {
+export async function startRun(playbookName, params = {}) {
     const pb = loadPlaybook(playbookName);
     if (!pb) {
         return { run: createEmptyRun("", ""), error: "Playbook not found" };
@@ -172,8 +242,15 @@ export function startRun(playbookName, params = {}) {
             status: "pending",
         })),
     };
-    activeRuns.set(runId, run);
-    persistRun(run);
+    await runMutex.acquire();
+    try {
+        activeRuns.set(runId, run);
+        persistRun(run);
+        evictIfNeeded();
+    }
+    finally {
+        runMutex.release();
+    }
     logger.info("executor", `Started playbook run: ${playbookName}`, { runId, playbookName });
     return { run };
 }
@@ -197,7 +274,24 @@ export function getCurrentStepContext(run) {
         baseDir: pb._dir,
     };
     // Resolve the playbook body as system prompt
-    const systemPrompt = resolvePlaybookBody(pb.body, ctx);
+    const contextMode = pb["context-mode"] ?? "Full";
+    let systemPrompt;
+    switch (contextMode) {
+        case "Selective":
+            // Only return the step prompt, no system prompt body
+            systemPrompt = `[Selective context mode — only the step prompt is shown]`;
+            break;
+        case "Fork":
+            // Return system prompt with fork hint for sub-agent delegation
+            systemPrompt =
+                resolvePlaybookBody(pb.body, ctx) +
+                    "\n\n[Fork context mode — you may spawn sub-agents for this step]";
+            break;
+        case "Full":
+        default:
+            systemPrompt = resolvePlaybookBody(pb.body, ctx);
+            break;
+    }
     // Resolve the step prompt
     let stepPrompt = "";
     if (step.file) {
@@ -226,8 +320,8 @@ export function getCurrentStepContext(run) {
  * Mark the current step as completed and advance.
  * Persists state for checkpoint/resume support.
  */
-export function completeCurrentStep(runId, output, error, _depth = 0) {
-    return withMutex(() => {
+export async function completeCurrentStep(runId, output, error, _depth = 0) {
+    return withMutex(async () => {
         const run = activeRuns.get(runId);
         if (!run) {
             // Guard against infinite restore loops
@@ -239,7 +333,8 @@ export function completeCurrentStep(runId, output, error, _depth = 0) {
                 return { error: `Run '${runId}' not found` };
             // Restore from persistence
             activeRuns.set(runId, persisted);
-            return completeCurrentStep(runId, output, error, _depth + 1);
+            evictIfNeeded();
+            return await completeCurrentStep(runId, output, error, _depth + 1);
         }
         if (run.currentStepIndex >= run.stepResults.length) {
             return { error: "No more steps in run" };
@@ -249,16 +344,86 @@ export function completeCurrentStep(runId, output, error, _depth = 0) {
             return { error: `Playbook '${run.playbookName}' not found` };
         const stepResult = run.stepResults[run.currentStepIndex];
         const step = pb.steps?.[run.currentStepIndex];
+        // ── Gate check ──
+        // If the current step has a gate and it hasn't been acknowledged,
+        // pause the run instead of completing the step.
+        if (step?.gate && !error) {
+            if (!run.gateStatus || !run.gateStatus.acknowledged) {
+                run.status = "paused";
+                run.gateStatus = {
+                    type: step.gate,
+                    stepId: step.id,
+                    acknowledged: false,
+                };
+                persistRun(run);
+                logger.info("executor", `Run paused awaiting gate acknowledgment`, {
+                    runId,
+                    stepId: step.id,
+                    gateType: step.gate,
+                });
+                // Return the gate context so the agent knows to acknowledge
+                const gateCtx = getCurrentStepContext(run);
+                return { run, nextStepContext: gateCtx };
+            }
+            // Gate was acknowledged — clear it and proceed
+            run.gateStatus = undefined;
+            run.status = "in_progress";
+        }
         if (error) {
+            // ── Auto-retry ──
+            if (step?.auto_retry) {
+                const retryCount = stepResult.retryCount ?? 0;
+                const maxRetries = 3;
+                if (retryCount < maxRetries) {
+                    stepResult.retryCount = retryCount + 1;
+                    stepResult.status = "running";
+                    stepResult.startedAt = new Date().toISOString();
+                    persistRun(run);
+                    logger.info("executor", `Step auto-retry ${retryCount + 1}/${maxRetries}: ${step?.id}`, {
+                        runId,
+                        stepId: step?.id,
+                        retryCount: retryCount + 1,
+                    });
+                    const retryCtx = getCurrentStepContext(run);
+                    return { run, nextStepContext: retryCtx };
+                }
+                // Max retries exceeded — fall through to failure
+                stepResult.error = `Max retries (${maxRetries}) exceeded. Last error: ${error}`;
+            }
+            else {
+                stepResult.error = error;
+            }
             stepResult.status = "failed";
-            stepResult.error = error;
             stepResult.finishedAt = new Date().toISOString();
             run.status = "failed";
-            run.error = error;
+            run.error = stepResult.error;
             run.finishedAt = new Date().toISOString();
             persistRun(run);
             logger.info("executor", `Step failed: ${step?.id}`, { runId, stepId: step?.id, error });
             return { run, nextStepContext: undefined };
+        }
+        // ── Timeout check ──
+        if (step?.timeout && step.timeout > 0) {
+            const stepResult2 = run.stepResults[run.currentStepIndex];
+            if (stepResult2.startedAt) {
+                const elapsed = Date.now() - new Date(stepResult2.startedAt).getTime();
+                if (elapsed > step.timeout * 1000) {
+                    stepResult2.status = "failed";
+                    stepResult2.error = `Step timed out after ${step.timeout}s`;
+                    stepResult2.finishedAt = new Date().toISOString();
+                    run.status = "failed";
+                    run.error = stepResult2.error;
+                    run.finishedAt = new Date().toISOString();
+                    persistRun(run);
+                    logger.info("executor", `Step timed out: ${step.id}`, {
+                        runId,
+                        stepId: step.id,
+                        timeout: step.timeout,
+                        elapsed,
+                    });
+                    return { run, nextStepContext: undefined };
+                }
+            }
         }
         stepResult.status = "completed";
         stepResult.output = output;
@@ -294,8 +459,8 @@ export function completeCurrentStep(runId, output, error, _depth = 0) {
 /**
  * Mark the current step as skipped.
  */
-export function skipCurrentStep(runId, _depth = 0) {
-    return withMutex(() => {
+export async function skipCurrentStep(runId, _depth = 0) {
+    return withMutex(async () => {
         const run = activeRuns.get(runId);
         if (!run) {
             if (_depth >= MAX_RESTORE_DEPTH) {
@@ -305,7 +470,8 @@ export function skipCurrentStep(runId, _depth = 0) {
             if (!persisted)
                 return { error: `Run '${runId}' not found` };
             activeRuns.set(runId, persisted);
-            return skipCurrentStep(runId, _depth + 1);
+            evictIfNeeded();
+            return await skipCurrentStep(runId, _depth + 1);
         }
         if (run.currentStepIndex >= run.stepResults.length) {
             return { error: "No more steps in run" };
@@ -333,8 +499,8 @@ export function skipCurrentStep(runId, _depth = 0) {
 /**
  * Resume an interrupted run from its last checkpoint.
  */
-export function resumeRun(runId) {
-    return withMutex(() => {
+export async function resumeRun(runId) {
+    return withMutex(async () => {
         let run = activeRuns.get(runId);
         if (!run) {
             const persisted = loadPersistedRun(runId);
@@ -342,6 +508,7 @@ export function resumeRun(runId) {
                 return { error: `Run '${runId}' not found` };
             run = persisted;
             activeRuns.set(runId, run);
+            evictIfNeeded();
         }
         if (run.status === "completed") {
             // Already finished — return the run with no next step context
@@ -375,6 +542,48 @@ export function getRunState(runId) {
     if (persisted)
         return persisted;
     return { error: `Run '${runId}' not found` };
+}
+/**
+ * Clear all in-memory active runs. Used by tests for clean state between cases.
+ * This does NOT delete persisted checkpoint files on disk.
+ */
+export function clearActiveRuns() {
+    activeRuns.clear();
+}
+/**
+ * Acknowledge a human-in-the-loop gate for the current paused step.
+ * After acknowledgment, the step is marked completed and the run advances.
+ */
+export async function acknowledgeGate(runId, output) {
+    return withMutex(async () => {
+        const run = activeRuns.get(runId);
+        if (!run) {
+            const persisted = loadPersistedRun(runId);
+            if (!persisted)
+                return { error: `Run '${runId}' not found` };
+            activeRuns.set(runId, persisted);
+            evictIfNeeded();
+            return await acknowledgeGate(runId, output);
+        }
+        if (!run.gateStatus) {
+            return { error: `Run '${runId}' is not awaiting a gate acknowledgment` };
+        }
+        if (run.gateStatus.acknowledged) {
+            return { error: `Gate for run '${runId}' has already been acknowledged` };
+        }
+        // Mark gate as acknowledged
+        run.gateStatus.acknowledged = true;
+        run.status = "in_progress";
+        persistRun(run);
+        logger.info("executor", `Gate acknowledged for run`, {
+            runId,
+            stepId: run.gateStatus.stepId,
+            gateType: run.gateStatus.type,
+        });
+        // Now complete the step
+        const result = await completeCurrentStep(runId, output);
+        return result;
+    });
 }
 // ─── Parameter Coercion ──────────────────────────────────────
 /**

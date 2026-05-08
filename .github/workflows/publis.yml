@@ -75,7 +75,7 @@ jobs:
       - name: Publish to Open VSX Registry
         run: npx ovsx publish *.vsix --skip-duplicate
         env:
-          OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

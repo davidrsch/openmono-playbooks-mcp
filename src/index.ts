@@ -38,8 +38,10 @@ import {
   getRunState,
   runValidate,
   getCurrentStepContext,
+  acknowledgeGate,
 } from "./executor.js";
-import { resolveSearchPaths } from "./loader.js";
+import { resolveSearchPaths, discoverPlaybooks } from "./loader.js";
+import { matchTrigger } from "./trigger.js";
 import { ErrorCode, makeError, type McpErrorResult } from "./errors.js";
 import { logger } from "./logger.js";
 
@@ -255,6 +257,26 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["name"],
         },
       },
+      {
+        name: "acknowledge_gate",
+        description:
+          "Acknowledge a human-in-the-loop gate on a paused playbook step. Gates (Confirm, Review, Approve) require explicit acknowledgment before the step can be marked complete and the run can advance. Call this after presenting the step's output for human review.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            runId: {
+              type: "string",
+              description: "The run ID of the paused playbook",
+            },
+            output: {
+              type: "string",
+              description:
+                "Optional output from the acknowledged step. If the step defines a named output key, this value is stored for downstream use via {{state.key}}.",
+            },
+          },
+          required: ["runId"],
+        },
+      },
     ],
   };
 });
@@ -329,7 +351,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "run_playbook": {
         const pbName = args?.name as string;
         const params = (args?.params as Record<string, unknown>) ?? {};
-        const result = startRun(pbName, params);
+        const result = await startRun(pbName, params);
 
         if (result.error) {
           return createTextResult(`❌ ${result.error}`, true);
@@ -348,7 +370,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "complete_step": {
         const runId = args?.runId as string;
         const output = args?.output as string | undefined;
-        const result = completeCurrentStep(runId, output);
+        const result = await completeCurrentStep(runId, output);
 
         if ("error" in result) {
           return createTextResult(`❌ ${result.error}`, true);
@@ -376,7 +398,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "skip_step": {
         const runId = args?.runId as string;
-        const result = skipCurrentStep(runId);
+        const result = await skipCurrentStep(runId);
 
         if ("error" in result) {
           return createTextResult(`❌ ${result.error}`, true);
@@ -398,7 +420,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "fail_step": {
         const runId = args?.runId as string;
         const error = args?.error as string;
-        const result = completeCurrentStep(runId, undefined, error);
+        const result = await completeCurrentStep(runId, undefined, error);
 
         if ("error" in result) {
           return createTextResult(`❌ ${result.error}`, true);
@@ -412,7 +434,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "resume_playbook": {
         const runId = args?.runId as string;
-        const result = resumeRun(runId);
+        const result = await resumeRun(runId);
 
         if ("error" in result) {
           return createTextResult(`❌ ${result.error}`, true);
@@ -468,6 +490,56 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           for (const pe of result.paramErrors) {
             lines.push(`- 🔴 ${pe}`);
           }
+        }
+        return createTextResult(lines.join("\n"));
+      }
+
+      case "acknowledge_gate": {
+        const runId = args?.runId as string;
+        const output = args?.output as string | undefined;
+        const result = await acknowledgeGate(runId, output);
+
+        if ("error" in result) {
+          return createTextResult(`❌ ${result.error}`, true);
+        }
+
+        if (result.run.status === "completed") {
+          return createTextResult(
+            `✅ Gate acknowledged. Playbook "${result.run.playbookName}" completed successfully!\n\nRun ID: ${runId}`,
+          );
+        }
+
+        if (result.nextStepContext) {
+          return createTextResult(formatStepContext(runId, result.nextStepContext));
+        }
+
+        return createTextResult(`✅ Gate acknowledged. Run ${runId} advanced.`);
+      }
+
+      case "match_playbook": {
+        const input = args?.input as string;
+        if (!input || input.trim().length === 0) {
+          return createTextResult("Please provide an `input` string to match against.", true);
+        }
+
+        const allPlaybooks = discoverPlaybooks();
+        const matches = matchTrigger(input, allPlaybooks);
+
+        if (matches.length === 0) {
+          return createTextResult(
+            `No playbook matches "${input}". Use \`list_playbooks\` to see all available playbooks.`,
+          );
+        }
+
+        const lines: string[] = [
+          `## Matching Playbooks for "${input}" (${matches.length} found)\n`,
+        ];
+        for (const m of matches) {
+          const tags = m.playbook.tags?.length ? ` [${m.playbook.tags.join(", ")}]` : "";
+          lines.push(
+            `- **${m.playbook.name}**${tags} v${m.playbook.version} — score: ${m.score} (pattern: \`${m.matchedPattern}\`)`,
+          );
+          lines.push(`  ${m.playbook.description}`);
         }
         return createTextResult(lines.join("\n"));
       }

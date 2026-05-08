@@ -34,6 +34,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Context mode variant tests
 - Circular dependency detection tests
 
+## [1.0.3] - 2026-05-08
+
+### Added
+
+- New test suites: `errors.test.ts`, `index.test.ts` (E2E via stdio), `loader.disk.test.ts`, `logger.test.ts`
+
+### Changed
+
+- Updated PAT for publishing workflow
+
+## [1.0.2] - 2026-05-08
+
+### Fixed
+
+- Add `icon` field to `package.json` for marketplace logo display
+
+## [1.0.1] - 2026-05-07
+
+### Changed
+
+- Version bump for marketplace release
+
 ## [1.0.0] - 2026-05-07
 
 ### Added
@@ -51,4 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive documentation including README, COMPARISON, HOW-TO-CREATE-PLAYBOOKS, and PLAYBOOKS reference
 
 [1.0.0]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.0
-[Unreleased]: https://github.com/davidrsch/playbooks-mcp/compare/v1.0.0...HEAD
+[1.0.1]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.1
+[1.0.2]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.2
+[1.0.3]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.3
+[Unreleased]: https://github.com/davidrsch/playbooks-mcp/compare/v1.0.3...HEAD

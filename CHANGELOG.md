@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-05-08
 
 ### Added
 
@@ -18,13 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Context mode support**: `Full`, `Selective`, and `Fork` context modes are now applied in step prompts
 - **Circular dependency detection**: `depends-on` chains are validated for circular references
 - **Async mutex with LRU eviction**: Replaced spinlock with a proper async-safe mutex; active runs cache evicts completed/failed runs when exceeding capacity (configurable via `MAX_ACTIVE_RUNS` env var)
+- **VS Code MCP server definition provider**: Registers as a native VS Code MCP server via `contributes.mcpServerDefinitionProviders`
+- **VS Code extension entry point** (`src/extension.ts`): Activates on startup and registers playbooks-mcp as an MCP server definition provider
 - **New error codes**: `GATE_NOT_ACKNOWLEDGED`, `STEP_TIMED_OUT`, `MAX_RETRIES_EXCEEDED`, `CIRCULAR_DEPENDENCY`
+- **VS Code Install badges** in README (Marketplace + Open VSX)
+- New test suites: `errors.test.ts`, `index.test.ts` (E2E via stdio), `loader.disk.test.ts`, `logger.test.ts`
 
 ### Changed
 
 - `startRun`, `completeCurrentStep`, `skipCurrentStep`, and `resumeRun` are now async functions
 - `StepResult` type extended with `retryCount` and `subRunId` fields
-- Error codes enum extended with 4 new values for gate, timeout, retry, and circular dependency scenarios
+- Error codes enum extended with 4 new values
+- `package.json` restructured: `main` → `dist/extension.js`, `exports./server` → `dist/index.js` for stdio
+- Updated README tool table with all 11 MCP tools
 
 ### Added Tests
 
@@ -33,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auto-retry and timeout behavior tests
 - Context mode variant tests
 - Circular dependency detection tests
+- Concurrent execution tests
+- Checkpoint persistence tests
 
 ## [1.0.3] - 2026-05-08
 
@@ -76,4 +84,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.0.1]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.1
 [1.0.2]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.2
 [1.0.3]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.3
-[Unreleased]: https://github.com/davidrsch/playbooks-mcp/compare/v1.0.3...HEAD
+[1.1.0]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.1.0
+[Unreleased]: https://github.com/davidrsch/playbooks-mcp/compare/v1.1.0...HEAD

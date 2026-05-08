@@ -1,6 +1,7 @@
 {
   "name": "playbooks-mcp",
   "version": "1.0.0",
+  "publisher": "davidrsch",
   "description": "MCP server that exposes OpenMono Playbooks — typed, multi-step AI workflows with human-in-the-loop gates, checkpointing, and composability — to any MCP-compatible agent.",
   "main": "dist/index.js",
   "type": "module",
@@ -39,6 +40,7 @@
     "format": "prettier --check \"src/**/*.ts\"",
     "format:fix": "prettier --write \"src/**/*.ts\"",
     "check": "npm run lint && npm run format && npm run test && npm run build",
+    "package": "vsce package --no-dependencies",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -59,13 +61,14 @@
     "@eslint/js": "^9.39.4",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.19.17",
+    "@vscode/vsce": "^3.9.1",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
+    "ovsx": "^0.10.0",
     "prettier": "^3.8.3",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.59.2",
-    "ovsx": "^0.10.0",
     "vitest": "^2.1.0"
   }
 }

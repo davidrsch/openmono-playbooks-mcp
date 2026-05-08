@@ -79,9 +79,15 @@ This server exposes the following tools to any MCP-compatible agent:
 | -------------------- | ------------------------------------------------------------------------------- |
 | `list_playbooks`     | Discover all available playbooks with names, descriptions, parameters, and tags |
 | `run_playbook`       | Execute a playbook by name with typed parameters; streams step-by-step status   |
+| `complete_step`      | Mark the current playbook step as completed and advance to the next             |
+| `skip_step`          | Skip the current step and advance                                               |
+| `fail_step`          | Mark the current step as failed and terminate the playbook run                  |
 | `resume_playbook`    | Resume an interrupted playbook from its last checkpoint                         |
 | `get_playbook_state` | Inspect current or final state of a playbook run                                |
 | `validate_playbook`  | Dry-run validation — check syntax, parameters, and step dependencies            |
+| `acknowledge_gate`   | Acknowledge a human-in-the-loop gate (Confirm, Review, Approve) on a paused step |
+| `match_playbook`     | Match user input against playbook trigger patterns with weighted scoring         |
+| `health_check`       | Server readiness probe — status, uptime, active runs, search paths               |
 
 ## Quick Start
 

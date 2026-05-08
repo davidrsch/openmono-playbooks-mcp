@@ -24,13 +24,14 @@ import {
   getRunState,
   runValidate,
   getCurrentStepContext,
+  acknowledgeGate,
 } from "../executor.js";
 
 // ── startRun ──────────────────────────────────────────────────
 
 describe("startRun", () => {
-  it("starts a valid playbook and returns a run", () => {
-    const result = startRun("test-minimal", {});
+  it("starts a valid playbook and returns a run", async () => {
+    const result = await startRun("test-minimal", {});
     expect(result.error).toBeUndefined();
     expect(result.run).toBeDefined();
     expect(result.run!.runId).toBeDefined();
@@ -39,14 +40,14 @@ describe("startRun", () => {
     expect(result.run!.currentStepIndex).toBe(0);
   });
 
-  it("returns an error for a non-existent playbook", () => {
-    const result = startRun("non-existent-playbook-xyz", {});
+  it("returns an error for a non-existent playbook", async () => {
+    const result = await startRun("non-existent-playbook-xyz", {});
     expect(result.error).toBeDefined();
     expect(result.error).toMatch(/Playbook not found/i);
   });
 
-  it("rejects unknown parameters when the playbook has params defined", () => {
-    const result = startRun("test-with-params", {
+  it("rejects unknown parameters when the playbook has params defined", async () => {
+    const result = await startRun("test-with-params", {
       message: "hello",
       unknownParam: "bad",
     });
@@ -54,15 +55,15 @@ describe("startRun", () => {
     expect(result.error).toMatch(/unknownParam/i);
   });
 
-  it("applies default values for optional parameters", () => {
-    const result = startRun("test-with-params", { message: "hello" });
+  it("applies default values for optional parameters", async () => {
+    const result = await startRun("test-with-params", { message: "hello" });
     expect(result.error).toBeUndefined();
     expect(result.run!.params.count).toBe(1); // default
     expect(result.run!.params.enabled).toBe(false); // default
   });
 
-  it("coerces Number parameters", () => {
-    const result = startRun("test-with-params", {
+  it("coerces Number parameters", async () => {
+    const result = await startRun("test-with-params", {
       message: "hello",
       count: "42" as unknown as number,
     });
@@ -71,8 +72,8 @@ describe("startRun", () => {
     expect(typeof result.run!.params.count).toBe("number");
   });
 
-  it("coerces Boolean parameters", () => {
-    const result = startRun("test-with-params", {
+  it("coerces Boolean parameters", async () => {
+    const result = await startRun("test-with-params", {
       message: "hello",
       enabled: "true" as unknown as boolean,
     });
@@ -80,8 +81,8 @@ describe("startRun", () => {
     expect(result.run!.params.enabled).toBe(true);
   });
 
-  it("coerces Array parameters from comma-separated strings", () => {
-    const result = startRun("test-with-params", {
+  it("coerces Array parameters from comma-separated strings", async () => {
+    const result = await startRun("test-with-params", {
       message: "hello",
       tags: "a, b, c" as unknown as string[],
     });
@@ -89,8 +90,8 @@ describe("startRun", () => {
     expect(result.run!.params.tags).toEqual(["a", "b", "c"]);
   });
 
-  it("errors on missing required parameters", () => {
-    const result = startRun("test-with-params", {});
+  it("errors on missing required parameters", async () => {
+    const result = await startRun("test-with-params", {});
     expect(result.error).toBeDefined();
     expect(result.error).toMatch(/message/i); // 'message' is required
   });
@@ -99,12 +100,12 @@ describe("startRun", () => {
 // ── Step lifecycle: complete ─────────────────────────────────
 
 describe("completeCurrentStep", () => {
-  it("completes a step and advances to the next", () => {
-    const start = startRun("test-multi-step", {});
+  it("completes a step and advances to the next", async () => {
+    const start = await startRun("test-multi-step", {});
     expect(start.error).toBeUndefined();
     const runId = start.run!.runId;
 
-    const result = completeCurrentStep(runId);
+    const result = await completeCurrentStep(runId);
     expect("error" in result).toBe(false);
     if ("error" in result) return;
     expect(result.run.status).toBe("in_progress");
@@ -113,19 +114,19 @@ describe("completeCurrentStep", () => {
     expect(result.nextStepContext!.step.id).toBe("step-two");
   });
 
-  it("marks the run as completed when all steps are done", () => {
-    const start = startRun("test-two-steps", {});
+  it("marks the run as completed when all steps are done", async () => {
+    const start = await startRun("test-two-steps", {});
     expect(start.error).toBeUndefined();
     const runId = start.run!.runId;
 
     // Complete step 1
-    const r1 = completeCurrentStep(runId);
+    const r1 = await completeCurrentStep(runId);
     expect("error" in r1).toBe(false);
     if ("error" in r1) return;
     expect(r1.run.status).toBe("in_progress");
 
     // Complete step 2 (last step)
-    const r2 = completeCurrentStep(runId);
+    const r2 = await completeCurrentStep(runId);
     expect("error" in r2).toBe(false);
     if ("error" in r2) return;
     expect(r2.run.status).toBe("completed");
@@ -133,12 +134,12 @@ describe("completeCurrentStep", () => {
     expect(r2.run.totalSteps).toBe(2);
   });
 
-  it("stores step output for downstream {{state.key}} references", () => {
-    const start = startRun("test-state-output", {});
+  it("stores step output for downstream {{state.key}} references", async () => {
+    const start = await startRun("test-state-output", {});
     expect(start.error).toBeUndefined();
     const runId = start.run!.runId;
 
-    const result = completeCurrentStep(runId, "my-output-value");
+    const result = await completeCurrentStep(runId, "my-output-value");
     expect("error" in result).toBe(false);
     if ("error" in result) return;
     // The state should now contain the output key for step "step-one"
@@ -151,8 +152,8 @@ describe("completeCurrentStep", () => {
     expect(state.state["step-one_output"]).toBe("my-output-value");
   });
 
-  it("returns an error for an unknown runId", () => {
-    const result = completeCurrentStep("nonexistent-run-id-12345");
+  it("returns an error for an unknown runId", async () => {
+    const result = await completeCurrentStep("nonexistent-run-id-12345");
     expect("error" in result).toBe(true);
     if (!("error" in result)) return;
     expect(result.error).toMatch(/not found/i);
@@ -162,12 +163,12 @@ describe("completeCurrentStep", () => {
 // ── Step lifecycle: skip ─────────────────────────────────────
 
 describe("skipCurrentStep", () => {
-  it("skips the current step and advances", () => {
-    const start = startRun("test-multi-step", {});
+  it("skips the current step and advances", async () => {
+    const start = await startRun("test-multi-step", {});
     expect(start.error).toBeUndefined();
     const runId = start.run!.runId;
 
-    const result = skipCurrentStep(runId);
+    const result = await skipCurrentStep(runId);
     expect("error" in result).toBe(false);
     if ("error" in result) return;
     expect(result.run.currentStepIndex).toBe(1);
@@ -176,12 +177,12 @@ describe("skipCurrentStep", () => {
     expect(result.run.stepResults[0].status).toBe("skipped");
   });
 
-  it("completes the run when the last step is skipped", () => {
-    const start = startRun("test-single-step", {});
+  it("completes the run when the last step is skipped", async () => {
+    const start = await startRun("test-single-step", {});
     expect(start.error).toBeUndefined();
     const runId = start.run!.runId;
 
-    const result = skipCurrentStep(runId);
+    const result = await skipCurrentStep(runId);
     expect("error" in result).toBe(false);
     if ("error" in result) return;
     expect(result.run.status).toBe("completed");
@@ -192,12 +193,12 @@ describe("skipCurrentStep", () => {
 // ── Step lifecycle: fail ─────────────────────────────────────
 
 describe("fail step", () => {
-  it("fails the current step and terminates the run", () => {
-    const start = startRun("test-single-step", {});
+  it("fails the current step and terminates the run", async () => {
+    const start = await startRun("test-single-step", {});
     expect(start.error).toBeUndefined();
     const runId = start.run!.runId;
 
-    const result = completeCurrentStep(runId, undefined, "something went wrong");
+    const result = await completeCurrentStep(runId, undefined, "something went wrong");
     expect("error" in result).toBe(false);
     if ("error" in result) return;
     expect(result.run.status).toBe("failed");
@@ -208,17 +209,17 @@ describe("fail step", () => {
 // ── Resume ────────────────────────────────────────────────────
 
 describe("resumeRun", () => {
-  it("resumes an in-progress run and returns the current step context", () => {
-    const start = startRun("test-multi-step", {});
+  it("resumes an in-progress run and returns the current step context", async () => {
+    const start = await startRun("test-multi-step", {});
     expect(start.error).toBeUndefined();
     const runId = start.run!.runId;
 
     // Advance one step so the run is mid-flight
-    const step1 = completeCurrentStep(runId);
+    const step1 = await completeCurrentStep(runId);
     expect("error" in step1).toBe(false);
 
     // Simulate "reconnect": resume the same runId
-    const resumed = resumeRun(runId);
+    const resumed = await resumeRun(runId);
     expect("error" in resumed).toBe(false);
     if ("error" in resumed) return;
     expect(resumed.run.runId).toBe(runId);
@@ -227,26 +228,26 @@ describe("resumeRun", () => {
     expect(resumed.stepContext!.step.id).toBe("step-two");
   });
 
-  it("returns an error for a non-existent runId", () => {
-    const result = resumeRun("nonexistent-run-id");
+  it("returns an error for a non-existent runId", async () => {
+    const result = await resumeRun("nonexistent-run-id");
     expect("error" in result).toBe(true);
     if (!("error" in result)) return;
     expect(result.error).toMatch(/not found/i);
   });
 
-  it("returns that the run is already completed for a finished run", () => {
-    const start = startRun("test-single-step", {});
+  it("returns that the run is already completed for a finished run", async () => {
+    const start = await startRun("test-single-step", {});
     expect(start.error).toBeUndefined();
     const runId = start.run!.runId;
 
     // Complete the only step
-    const done = completeCurrentStep(runId);
+    const done = await completeCurrentStep(runId);
     expect("error" in done).toBe(false);
     if ("error" in done) return;
     expect(done.run.status).toBe("completed");
 
     // Resume a completed run
-    const resumed = resumeRun(runId);
+    const resumed = await resumeRun(runId);
     expect("error" in resumed).toBe(false);
     if ("error" in resumed) return;
     expect(resumed.stepContext).toBeUndefined();
@@ -256,8 +257,8 @@ describe("resumeRun", () => {
 // ── getRunState ───────────────────────────────────────────────
 
 describe("getRunState", () => {
-  it("returns the full state of an active run", () => {
-    const start = startRun("test-multi-step", {});
+  it("returns the full state of an active run", async () => {
+    const start = await startRun("test-multi-step", {});
     expect(start.error).toBeUndefined();
     const runId = start.run!.runId;
 
@@ -280,8 +281,8 @@ describe("getRunState", () => {
 // ── getCurrentStepContext ─────────────────────────────────────
 
 describe("getCurrentStepContext", () => {
-  it("returns the current step context for an active run", () => {
-    const start = startRun("test-multi-step", {});
+  it("returns the current step context for an active run", async () => {
+    const start = await startRun("test-multi-step", {});
     expect(start.error).toBeUndefined();
 
     const ctx = getCurrentStepContext(start.run!);
@@ -292,11 +293,11 @@ describe("getCurrentStepContext", () => {
     expect(ctx!.allowedTools.length).toBeGreaterThan(0);
   });
 
-  it("returns undefined for a completed run", () => {
-    const start = startRun("test-single-step", {});
+  it("returns undefined for a completed run", async () => {
+    const start = await startRun("test-single-step", {});
     expect(start.error).toBeUndefined();
     const runId = start.run!.runId;
-    completeCurrentStep(runId);
+    await completeCurrentStep(runId);
 
     const ctx = getCurrentStepContext(start.run!);
     expect(ctx).toBeUndefined();
@@ -341,8 +342,8 @@ describe("runValidate", () => {
 // ── Gate behavior ─────────────────────────────────────────────
 
 describe("gated steps", () => {
-  it("returns gate information in step context for gated steps", () => {
-    const start = startRun("test-gated", {});
+  it("returns gate information in step context for gated steps", async () => {
+    const start = await startRun("test-gated", {});
     expect(start.error).toBeUndefined();
 
     const ctx = getCurrentStepContext(start.run!);
@@ -350,25 +351,75 @@ describe("gated steps", () => {
     expect(ctx!.gate).toBe("Confirm");
   });
 });
+// ── Gate enforcement ──────────────────────────────────────────
 
+describe("gate enforcement", () => {
+  it("pauses the run when a gated step is completed without acknowledgment", async () => {
+    const start = await startRun("test-gated", {});
+    expect(start.error).toBeUndefined();
+    const runId = start.run!.runId;
+
+    // Attempt to complete the gated step (no prior acknowledgment)
+    const result = await completeCurrentStep(runId);
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+
+    // Run should be paused, not advanced
+    expect(result.run.status).toBe("paused");
+    expect(result.run.gateStatus).toBeDefined();
+    expect(result.run.gateStatus!.type).toBe("Confirm");
+    expect(result.run.gateStatus!.acknowledged).toBe(false);
+    expect(result.run.currentStepIndex).toBe(0); // not advanced
+  });
+
+  it("rejects completion when gate is already acknowledged", async () => {
+    const start = await startRun("test-gated", {});
+    expect(start.error).toBeUndefined();
+    const runId = start.run!.runId;
+
+    // First call: gate not acknowledged → pause
+    const r1 = await completeCurrentStep(runId);
+    expect("error" in r1).toBe(false);
+    if ("error" in r1) return;
+    expect(r1.run.status).toBe("paused");
+
+    // Acknowledge the gate
+    const ack = await acknowledgeGate(runId, "approved");
+    expect("error" in ack).toBe(false);
+    if ("error" in ack) return;
+    // After acknowledge, the step is completed and run advances
+    expect(ack.run.status).toBe("completed"); // single-step playbook
+  });
+
+  it("returns error when acknowledging a run without a pending gate", async () => {
+    const start = await startRun("test-multi-step", {});
+    expect(start.error).toBeUndefined();
+    const runId = start.run!.runId;
+
+    const result = await acknowledgeGate(runId);
+    expect("error" in result).toBe(true);
+    if (!("error" in result)) return;
+    expect(result.error).toMatch(/not awaiting a gate/i);
+  });
+});
 // ── Template resolution ───────────────────────────────────────
 
 describe("template resolution", () => {
-  it("resolves {{params.*}} in step prompts", () => {
-    const start = startRun("test-with-params", { message: "Greetings!" });
+  it("resolves {{params.*}} in step prompts", async () => {
+    const start = await startRun("test-with-params", { message: "Greetings!" });
     expect(start.error).toBeUndefined();
     const ctx = getCurrentStepContext(start.run!);
     expect(ctx).toBeDefined();
     expect(ctx!.resolvedPrompt).toContain("Greetings!");
   });
 
-  it("resolves {{state.*}} references from previously stored outputs", () => {
-    const start = startRun("test-state-output", {});
+  it("resolves {{state.*}} references from previously stored outputs", async () => {
+    const start = await startRun("test-state-output", {});
     expect(start.error).toBeUndefined();
     const runId = start.run!.runId;
 
     // Complete first step with an output
-    completeCurrentStep(runId, "computed-value");
+    await completeCurrentStep(runId, "computed-value");
 
     // Verify state tracking via getRunState
     const state = getRunState(runId);

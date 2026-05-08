@@ -152,6 +152,12 @@ export interface PlaybookRunState {
   stepResults: StepResult[];
   /** Error message if status is "failed" */
   error?: string;
+  /** Gate status — set when a gated step is reached and awaiting acknowledgment */
+  gateStatus?: {
+    type: GateType;
+    stepId: string;
+    acknowledged: boolean;
+  };
 }
 
 export interface StepResult {
@@ -161,6 +167,10 @@ export interface StepResult {
   error?: string;
   startedAt?: string;
   finishedAt?: string;
+  /** Number of auto-retries attempted (only set if auto_retry is enabled) */
+  retryCount?: number;
+  /** Sub-playbook run ID if this step invokes another playbook */
+  subRunId?: string;
 }
 
 // ─── MCP Tool Input Types ─────────────────────────────────────

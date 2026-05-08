@@ -378,7 +378,92 @@ export function validatePlaybook(def: PlaybookDefinition): ValidationIssue[] {
         });
       }
     }
+    // Check for circular dependencies among loaded playbooks
+    const resolved = resolveAllDependencies(def, all);
+    const circular = detectCircularDependency(def.name, resolved);
+    if (circular) {
+      issues.push({
+        field: "depends-on",
+        message: `Circular dependency detected: ${circular.join(" → ")}`,
+        severity: "error",
+      });
+    }
   }
 
   return issues;
+}
+
+/**
+ * Recursively resolve all transitive dependencies for a playbook.
+ */
+function resolveAllDependencies(
+  def: PlaybookDefinition,
+  allPlaybooks: PlaybookDefinition[],
+): Map<string, string[]> {
+  const depMap = new Map<string, string[]>();
+  const nameMap = new Map(allPlaybooks.map((p) => [p.name, p]));
+
+  function resolve(name: string, visited: Set<string>): string[] {
+    if (visited.has(name)) return [];
+    visited.add(name);
+
+    const pb = nameMap.get(name);
+    if (!pb) return [];
+
+    const deps = pb["depends-on"] ?? [];
+    const allDeps = new Set(deps);
+
+    for (const dep of deps) {
+      for (const transitive of resolve(dep, new Set(visited))) {
+        allDeps.add(transitive);
+      }
+    }
+
+    return Array.from(allDeps);
+  }
+
+  for (const pb of allPlaybooks) {
+    depMap.set(pb.name, resolve(pb.name, new Set()));
+  }
+
+  return depMap;
+}
+
+/**
+ * Detect circular dependencies using DFS.
+ * Returns the cycle path if found, null otherwise.
+ */
+function detectCircularDependency(
+  startName: string,
+  depMap: Map<string, string[]>,
+): string[] | null {
+  const visited = new Set<string>();
+  const stack: string[] = [];
+
+  function dfs(name: string): boolean {
+    if (stack.includes(name)) {
+      // Found cycle — extract the cycle portion
+      const cycleStart = stack.indexOf(name);
+      return true;
+    }
+    if (visited.has(name)) return false;
+
+    visited.add(name);
+    stack.push(name);
+
+    const deps = depMap.get(name) ?? [];
+    for (const dep of deps) {
+      if (dfs(dep)) return true;
+    }
+
+    stack.pop();
+    return false;
+  }
+
+  if (dfs(startName)) {
+    // Extract cycle from stack
+    const cycleStart = stack.indexOf(stack[stack.length - 1]);
+    return stack.slice(cycleStart);
+  }
+  return null;
 }

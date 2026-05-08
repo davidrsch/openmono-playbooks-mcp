@@ -36,6 +36,14 @@ export enum ErrorCode {
   INTERNAL_ERROR = "INTERNAL_ERROR",
   /** A sub-playbook was not found */
   SUB_PLAYBOOK_NOT_FOUND = "SUB_PLAYBOOK_NOT_FOUND",
+  /** A gated step cannot be advanced until the gate is acknowledged */
+  GATE_NOT_ACKNOWLEDGED = "GATE_NOT_ACKNOWLEDGED",
+  /** A step exceeded its configured timeout */
+  STEP_TIMED_OUT = "STEP_TIMED_OUT",
+  /** Maximum auto-retry attempts exceeded */
+  MAX_RETRIES_EXCEEDED = "MAX_RETRIES_EXCEEDED",
+  /** Circular dependency detected in playbook depends-on chain */
+  CIRCULAR_DEPENDENCY = "CIRCULAR_DEPENDENCY",
 }
 
 /**

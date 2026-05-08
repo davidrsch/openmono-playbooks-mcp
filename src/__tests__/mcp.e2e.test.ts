@@ -186,7 +186,7 @@ describe("MCP Server E2E (InMemoryTransport)", () => {
           case "run_playbook": {
             const pbName = args?.name as string;
             const params = (args?.params as Record<string, unknown>) ?? {};
-            const result = startRun(pbName, params);
+            const result = await startRun(pbName, params);
             if (result.error) {
               return createTextResult(`❌ ${result.error}`, true);
             }

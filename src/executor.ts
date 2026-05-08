@@ -127,8 +127,9 @@ function evictIfNeeded(): void {
 
   // If still over limit, evict oldest in-progress/paused runs
   if (activeRuns.size > MAX_ACTIVE_RUNS) {
-    const remaining = Array.from(activeRuns.entries())
-      .sort((a, b) => a[1].startedAt.localeCompare(b[1].startedAt));
+    const remaining = Array.from(activeRuns.entries()).sort((a, b) =>
+      a[1].startedAt.localeCompare(b[1].startedAt),
+    );
     const stillExcess = activeRuns.size - MAX_ACTIVE_RUNS;
     for (let i = 0; i < stillExcess; i++) {
       activeRuns.delete(remaining[i][0]);

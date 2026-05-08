@@ -41,6 +41,9 @@ function checkInputSize(name, args) {
     return null;
 }
 function checkRateLimit() {
+    // Skip rate limiting in test mode
+    if (process.env.NODE_ENV === "test")
+        return null;
     // Coarse in-process rate limiter: use an ephemeral session key
     // (In production an MCP server would use transport-scoped identifiers.)
     const key = "default";

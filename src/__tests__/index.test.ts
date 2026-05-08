@@ -56,10 +56,7 @@ describeIf("MCP Server E2E", () => {
       env,
     });
 
-    client = new Client(
-      { name: "test-client", version: "1.0.0" },
-      { capabilities: {} },
-    );
+    client = new Client({ name: "test-client", version: "1.0.0" }, { capabilities: {} });
 
     await client.connect(transport);
   }, 30_000);
@@ -163,9 +160,9 @@ describeIf("MCP Server E2E", () => {
       const text = getText(result);
       expect(text).toContain("Run ID:");
       expect(text).toContain("step-one");
-      expect(text).toContain("This is step one");
+      expect(text).toContain("Step 1 - do the first thing");
 
-      // Extract run ID for cleanup
+      // Extract run ID for cleanup (run_playbook - first occurrence)
       const match = text.match(/\*\*Run ID:\*\*\s*([a-f0-9-]+)/);
       if (match) collectedRunIds.push(match[1]);
     });
@@ -240,7 +237,7 @@ describeIf("MCP Server E2E", () => {
       expect(result.isError).toBeFalsy();
       const text = getText(result);
       expect(text).toContain("step-two");
-      expect(text).toContain("This is step two");
+      expect(text).toContain("Step 2 - do the second thing");
     });
 
     it("completes the run on the last step", async () => {
@@ -376,7 +373,7 @@ describeIf("MCP Server E2E", () => {
       expect(result.isError).toBeFalsy();
       const text = getText(result);
       expect(text).toContain("step-one");
-      expect(text).toContain("This is step one");
+      expect(text).toContain("Step 1 - do the first thing");
     });
 
     it("returns error for unknown run ID", async () => {

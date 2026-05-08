@@ -48,11 +48,10 @@ describe("makeError", () => {
   });
 
   it("includes details when provided", () => {
-    const err = makeError(
-      ErrorCode.INPUT_TOO_LARGE,
-      "Input too large",
-      { size: 2_000_000, maxSize: 1_048_576 },
-    );
+    const err = makeError(ErrorCode.INPUT_TOO_LARGE, "Input too large", {
+      size: 2_000_000,
+      maxSize: 1_048_576,
+    });
     expect(err.error).toBe(true);
     expect(err.code).toBe("INPUT_TOO_LARGE");
     expect(err.message).toBe("Input too large");

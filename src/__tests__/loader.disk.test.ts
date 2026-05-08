@@ -8,7 +8,7 @@
  *  - loadPlaybook (finds a playbook by name on disk)
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -529,6 +529,19 @@ Target body`,
 });
 
 describe("resolveSearchPaths", () => {
+  const RS_TEST_DIR = path.join(os.tmpdir(), `playbooks-mcp-rs-test-${Date.now()}`);
+  const RS_PLAYBOOKS_DIR = path.join(RS_TEST_DIR, ".openmono", "playbooks");
+
+  beforeAll(() => {
+    fs.mkdirSync(RS_PLAYBOOKS_DIR, { recursive: true });
+  });
+
+  afterAll(() => {
+    if (fs.existsSync(RS_TEST_DIR)) {
+      fs.rmSync(RS_TEST_DIR, { recursive: true, force: true });
+    }
+  });
+
   it("includes home .openmono/playbooks if it exists", () => {
     // The home path may or may not exist in CI, but the function should not throw
     const paths = resolveSearchPaths();
@@ -536,12 +549,11 @@ describe("resolveSearchPaths", () => {
   });
 
   it("includes project-local .openmono/playbooks if it exists", () => {
-    // We just created TEST_DIR with .openmono/playbooks
     const originalCwd = process.cwd();
     try {
-      process.chdir(TEST_DIR);
+      process.chdir(RS_TEST_DIR);
       const paths = resolveSearchPaths();
-      expect(paths.some((p) => p.includes(TEST_DIR))).toBe(true);
+      expect(paths.some((p) => p.includes(RS_TEST_DIR))).toBe(true);
     } finally {
       process.chdir(originalCwd);
     }

@@ -30,8 +30,7 @@ export function activate(context: vscode.ExtensionContext): void {
       ): Promise<vscode.McpServerDefinition[]> => {
         // Read configured search paths from VS Code settings
         const config = vscode.workspace.getConfiguration("playbooks");
-        const searchPath =
-          config.get<string>("searchPath") ?? "~/.openmono/playbooks";
+        const searchPath = config.get<string>("searchPath") ?? "~/.openmono/playbooks";
 
         return [
           new vscode.McpStdioServerDefinition(

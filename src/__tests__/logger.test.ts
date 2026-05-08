@@ -17,9 +17,7 @@ describe("logger", () => {
 
   beforeEach(() => {
     capturedOutput = [];
-    vi.spyOn(process.stderr, "write").mockImplementation(((
-      chunk: string | Uint8Array,
-    ): boolean => {
+    vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array): boolean => {
       capturedOutput.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
       return true;
     }) as any);

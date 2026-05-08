@@ -77,10 +77,7 @@ function scoreMatch(input: string, pattern: string): number {
  * Returns playbooks sorted by match score descending.
  * Only playbooks with trigger mode "auto" or "both" are considered.
  */
-export function matchTrigger(
-  input: string,
-  playbooks: PlaybookDefinition[],
-): TriggerMatch[] {
+export function matchTrigger(input: string, playbooks: PlaybookDefinition[]): TriggerMatch[] {
   const matches: TriggerMatch[] = [];
 
   for (const pb of playbooks) {
@@ -115,10 +112,7 @@ export function matchTrigger(
  * Find the single best-matching playbook for the given input.
  * Returns null if no playbook matches.
  */
-export function findBestMatch(
-  input: string,
-  playbooks: PlaybookDefinition[],
-): TriggerMatch | null {
+export function findBestMatch(input: string, playbooks: PlaybookDefinition[]): TriggerMatch | null {
   const matches = matchTrigger(input, playbooks);
   return matches.length > 0 ? matches[0] : null;
 }

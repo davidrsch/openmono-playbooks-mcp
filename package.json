@@ -1,6 +1,6 @@
 {
   "name": "playbooks-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "davidrsch",
   "description": "MCP server that exposes OpenMono Playbooks — typed, multi-step AI workflows with human-in-the-loop gates, checkpointing, and composability — to any MCP-compatible agent.",
   "main": "dist/index.js",

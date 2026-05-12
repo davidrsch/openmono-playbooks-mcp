@@ -14,7 +14,8 @@ const FRONTMATTER_REGEX = /^---\s*\n([\s\S]*?)---\s*\n([\s\S]*)$/;
 // ─── Search Path Resolution ──────────────────────────────────
 /**
  * Resolves the ordered list of directories to search for playbooks.
- * Order: PLAYBOOKS_PATH env var, ~/.openmono/playbooks, .openmono/playbooks
+ * Order: PLAYBOOKS_PATH env var, WORKSPACE_ROOTS env var,
+ * ~/.openmono/playbooks, process.cwd()/.openmono/playbooks
  */
 export function resolveSearchPaths() {
     const paths = [];
@@ -29,11 +30,22 @@ export function resolveSearchPaths() {
                 paths.push(resolved);
         }
     }
-    // 2. User-global playbooks
+    // 2. Workspace roots from VS Code (injected by extension.ts resolveMcpServerDefinition)
+    //    When the MCP server runs as a child process, its CWD is NOT the project root.
+    //    This env var bridges that gap so project-local .openmono/playbooks/ is found.
+    const workspaceRootsEnv = process.env.WORKSPACE_ROOTS;
+    if (workspaceRootsEnv) {
+        for (const root of workspaceRootsEnv.split(path.delimiter)) {
+            const pbPath = path.join(root, ".openmono", "playbooks");
+            if (fs.existsSync(pbPath))
+                paths.push(pbPath);
+        }
+    }
+    // 3. User-global playbooks
     const homePlaybooks = path.join(process.env.HOME ?? process.env.USERPROFILE ?? "", ".openmono", "playbooks");
     if (fs.existsSync(homePlaybooks))
         paths.push(homePlaybooks);
-    // 3. Project-local playbooks (relative to CWD)
+    // 4. Project-local playbooks (relative to CWD) — last resort
     const projectPlaybooks = path.join(process.cwd(), ".openmono", "playbooks");
     if (fs.existsSync(projectPlaybooks))
         paths.push(projectPlaybooks);

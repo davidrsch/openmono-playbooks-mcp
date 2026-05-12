@@ -612,6 +612,54 @@ describe("resolveSearchPaths", () => {
       }
     }
   });
+
+  it("discovers playbooks via WORKSPACE_ROOTS when CWD has no .openmono", () => {
+    // Simulate the production scenario: the MCP server is spawned by VS Code
+    // with a CWD that does NOT contain .openmono/playbooks. The extension
+    // injects WORKSPACE_ROOTS so the loader can find project-local playbooks.
+    const originalEnv = process.env.WORKSPACE_ROOTS;
+    const originalPlaybooksPath = process.env.PLAYBOOKS_PATH;
+    const originalCwd = process.cwd();
+    try {
+      // Create a temp directory that has .openmono/playbooks (simulates a project root)
+      const projectDir = path.join(os.tmpdir(), `ws-root-test-${Date.now()}`);
+      const pbDir = path.join(projectDir, ".openmono", "playbooks", "ws-pb");
+      fs.mkdirSync(pbDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(pbDir, "PLAYBOOK.md"),
+        `---
+name: ws-pb
+version: "1.0.0"
+description: Discovered via WORKSPACE_ROOTS
+---
+Body`,
+        "utf-8",
+      );
+
+      // Set WORKSPACE_ROOTS to the project directory
+      process.env.WORKSPACE_ROOTS = projectDir;
+      // Remove PLAYBOOKS_PATH so only WORKSPACE_ROOTS is in play
+      delete process.env.PLAYBOOKS_PATH;
+      // Change CWD to a directory WITHOUT .openmono/playbooks
+      process.chdir(os.tmpdir());
+
+      const playbooks = discoverPlaybooks();
+      const names = playbooks.map((p) => p.name);
+      expect(names).toContain("ws-pb");
+    } finally {
+      if (originalEnv !== undefined) {
+        process.env.WORKSPACE_ROOTS = originalEnv;
+      } else {
+        delete process.env.WORKSPACE_ROOTS;
+      }
+      if (originalPlaybooksPath !== undefined) {
+        process.env.PLAYBOOKS_PATH = originalPlaybooksPath;
+      } else {
+        delete process.env.PLAYBOOKS_PATH;
+      }
+      process.chdir(originalCwd);
+    }
+  });
 });
 
 describe("validatePlaybook", () => {

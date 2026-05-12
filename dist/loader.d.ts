@@ -8,7 +8,8 @@
 import type { PlaybookDefinition } from "./types.js";
 /**
  * Resolves the ordered list of directories to search for playbooks.
- * Order: PLAYBOOKS_PATH env var, ~/.openmono/playbooks, .openmono/playbooks
+ * Order: PLAYBOOKS_PATH env var, WORKSPACE_ROOTS env var,
+ * ~/.openmono/playbooks, process.cwd()/.openmono/playbooks
  */
 export declare function resolveSearchPaths(): string[];
 /**

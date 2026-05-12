@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-05-12
+
+### Removed
+
+- **In-process rate limiting**: Removed the coarse `checkRateLimit()` guard and `RATE_LIMIT_EXCEEDED` error code. Rate limiting was a single-key in-process map that could interfere with legitimate rapid MCP tool calls from the same agent session. Rate limiting should be handled at the transport/connection level by MCP clients and transports, not in-process.
+
+### Changed
+
+- **Rapid request E2E tests**: Rewrote rate-limiting tests to verify that rapid successive requests both succeed, reflecting the removal of in-process rate limiting.
+
 ## [1.2.2] - 2026-05-12
 
 ### Fixed
@@ -135,6 +145,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-version Node.js CI matrix (18.x, 20.x, 22.x) with lint, test, and security audit
 - Comprehensive documentation including README, COMPARISON, HOW-TO-CREATE-PLAYBOOKS, and PLAYBOOKS reference
 
+[1.2.3]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.2.3
+[1.2.2]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.2.2
+[1.2.1]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.2.1
 [1.2.0]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.2.0
 [1.1.1]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.1.1
 [1.1.0]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.1.0
@@ -142,4 +155,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.0.2]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.0
-[Unreleased]: https://github.com/davidrsch/playbooks-mcp/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/davidrsch/playbooks-mcp/compare/v1.2.3...HEAD

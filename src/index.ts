@@ -28,6 +28,7 @@ import {
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Buffer } from "node:buffer";
 import { fileURLToPath } from "node:url";
 
 // __dirname equivalent in ESM
@@ -673,6 +674,10 @@ function formatStepContext(
     `## 📋 Step: ${ctx.step.id} (${ctx.stepIndex + 1})`,
     `- **Description:** ${ctx.step.description ?? "—"}`,
   ];
+
+  if (ctx.step.agent) {
+    lines.push(`- **🤖 Sub-Agent:** \`${ctx.step.agent}\` — delegate this step to the named agent`);
+  }
 
   if (ctx.gate) {
     lines.push(

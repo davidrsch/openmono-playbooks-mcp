@@ -94,6 +94,48 @@ describe("matchTrigger", () => {
     const pb = makePb({ "trigger-patterns": ["commit"] });
     expect(matchTrigger("", [pb])).toHaveLength(0);
   });
+
+  it("matches pattern starting with wildcard", () => {
+    const pb = makePb({ "trigger-patterns": ["* code review"] });
+    const results = matchTrigger("do a code review", [pb]);
+    expect(results).toHaveLength(1);
+    expect(results[0].score).toBeGreaterThan(0);
+  });
+
+  it("matches pattern ending with wildcard", () => {
+    const pb = makePb({ "trigger-patterns": ["create *"] });
+    const results = matchTrigger("create release", [pb]);
+    expect(results).toHaveLength(1);
+    expect(results[0].score).toBeGreaterThan(0);
+  });
+
+  it("matches pattern with wildcard in middle", () => {
+    const pb = makePb({ "trigger-patterns": ["deploy * to *"] });
+    const results = matchTrigger("deploy app to staging", [pb]);
+    expect(results).toHaveLength(1);
+    expect(results[0].score).toBeGreaterThan(0);
+  });
+
+  it("matches pattern with question mark wildcard", () => {
+    const pb = makePb({ "trigger-patterns": ["file?.txt"] });
+    const results = matchTrigger("fileA.txt", [pb]);
+    expect(results).toHaveLength(1);
+    expect(results[0].score).toBeGreaterThan(0);
+  });
+
+  it("multiple patterns, first non-matching", () => {
+    const pb = makePb({ "trigger-patterns": ["deploy", "commit"] });
+    const results = matchTrigger("commit", [pb]);
+    expect(results).toHaveLength(1);
+    expect(results[0].score).toBe(100);
+  });
+
+  it("pattern with only wildcard", () => {
+    const pb = makePb({ "trigger-patterns": ["*"] });
+    const results = matchTrigger("anything", [pb]);
+    expect(results).toHaveLength(1);
+    expect(results[0].score).toBeGreaterThan(0);
+  });
 });
 
 describe("findBestMatch", () => {

@@ -312,6 +312,7 @@ export function getCurrentStepContext(run: PlaybookRunState):
       systemPrompt: string;
       resolvedPrompt: string;
       gate: PlaybookStep["gate"];
+      agent: PlaybookStep["agent"];
       allowedTools: string[];
     }
   | undefined {
@@ -392,6 +393,7 @@ export function getCurrentStepContext(run: PlaybookRunState):
     systemPrompt,
     resolvedPrompt,
     gate: step.gate,
+    agent: step.agent,
     allowedTools: pb["allowed-tools"] ?? ["*"],
   };
 }

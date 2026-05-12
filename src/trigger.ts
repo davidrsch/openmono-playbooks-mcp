@@ -25,7 +25,9 @@ export interface TriggerMatch {
  * Supports * as a multi-character wildcard and ? as a single-character wildcard.
  */
 function patternToRegex(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  // Escape all regex special characters first, including * and ? which are
+  // wildcards in trigger patterns but quantifiers in regex.
+  const escaped = pattern.replace(/[.+^${}()|[\]\\*?]/g, "\\$&");
   const regexStr = escaped
     .replace(/\\\*/g, ".*") // * → .*
     .replace(/\\\?/g, "."); // ? → .

@@ -1,6 +1,6 @@
 {
   "name": "playbooks-mcp",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "davidrsch",
   "icon": "logo.png",
   "description": "MCP server that exposes OpenMono Playbooks — typed, multi-step AI workflows with human-in-the-loop gates, checkpointing, and composability — to any MCP-compatible agent.",
@@ -8,9 +8,9 @@
   "type": "module",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/extension.js",
-      "require": "./dist/extension.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/extension.js"
     },
     "./server": {
       "import": "./dist/index.js",
@@ -50,7 +50,7 @@
     "url": "https://github.com/davidrsch/playbooks-mcp/issues"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node esbuild.config.js",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
@@ -83,6 +83,7 @@
     "@types/node": "^22.19.17",
     "@types/vscode": "^1.118.0",
     "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.28.0",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "ovsx": "^0.10.0",

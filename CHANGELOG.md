@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-05-12
+
+### Fixed
+
+- **Runtime `ERR_MODULE_NOT_FOUND` for `@modelcontextprotocol/sdk`**: The MCP server failed to start with `Cannot find package '@modelcontextprotocol/sdk'` when installed as a VS Code extension because `vsce package --no-dependencies` stripped `node_modules`. Fixed by adding an esbuild bundling step that inlines all dependencies into a self-contained `dist/index.js` bundle.
+- **`exports` field ordering in `package.json`**: Moved the `types` condition before `import`/`require` to fix an esbuild warning.
+
+### Changed
+
+- Build pipeline now runs `tsc && node esbuild.config.js` instead of just `tsc`.
+- Added `esbuild` as a dev dependency.
+
 ## [1.1.0] - 2026-05-08
 
 ### Added

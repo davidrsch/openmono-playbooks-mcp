@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-05-12
+
+### Added
+
+- **SKILL.md**: Bundled agent skill file that teaches any MCP-compatible agent the playbook execution protocol. Agents now know to call `run_playbook` → execute step → `complete_step` rather than reading `PLAYBOOK.md` as a static file.
+- **Agent protocol instructions in tool responses**: `formatStepContext`, `list_playbooks`, and `match_playbook` responses now include prominent, hard-to-miss protocol instructions telling the agent to execute playbooks through MCP tools. Every step response starts with a `⚠️ PLAYBOOK PROTOCOL — MANDATORY` block with the exact `runId` and next tool to call.
+
+### Changed
+
+- **`formatStepContext`**: Restructured response format — protocol instructions now appear FIRST (above the step content) with bold, emoji-highlighted call-to-actions including the literal `runId`. Gate instructions are now inline with actionable next steps.
+
+### Fixed
+
+- **Agents treating `PLAYBOOK.md` as a static file to read**: Without proper instructions, agents would discover `PLAYBOOK.md` and just read it with `read_file`, never actually executing the workflow. Now both the SKILL.md (proactive) and tool response formatting (reactive) ensure agents drive the `run_playbook → complete_step` loop.
+
 ## [1.2.0] - 2026-05-12
 
 ### Added

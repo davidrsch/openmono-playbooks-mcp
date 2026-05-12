@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-05-12
+
+### Fixed
+
+- **`match_playbook` crash on wildcard-starting trigger patterns**: Patterns like `* code review` caused `Invalid regular expression: /^* code review$/i: Nothing to repeat` because `*` and `?` were not escaped before regex construction. Added `*` and `?` to the regex escape character class in `patternToRegex()`.
+- **Missing `Buffer` import**: `Buffer.byteLength()` was used in `index.ts` without an explicit import. Added `import { Buffer } from "node:buffer"`.
+
+### Added
+
+- **Sub-agent delegation hints in step context**: When a playbook step defines an `agent` field, the step context now includes a prominent `🤖 Sub-Agent:` line telling the calling agent to delegate execution to the named agent.
+- **Trigger pattern edge case tests**: 6 new tests covering wildcard-starting patterns, wildcard-ending patterns, mid-pattern wildcards, `?` single-char wildcards, multiple patterns with first-non-matching, and `*`-only match-all patterns.
+
 ## [1.2.1] - 2026-05-12
 
 ### Added

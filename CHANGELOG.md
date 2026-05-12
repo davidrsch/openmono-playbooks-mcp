@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-05-13
+
+### Added
+
+- **MCP `prompts` capability**: User-invocable playbooks are now surfaced as MCP prompts (slash commands) in Claude Desktop, Cline, VS Code agent mode, and any other compliant MCP client. `prompts/list` returns all playbooks with `user-invocable: true`, mapping each parameter to a typed prompt argument. `prompts/get` returns a pre-filled `run_playbook` invocation message with supplied argument values substituted.
+- **Agent `instructions` in server init**: The MCP `initialize` response now includes an `instructions` field — the primary MCP mechanism for servers to teach agents their usage protocol. Agents are told to call `match_playbook` on every user turn before responding, call `complete_step` after each step, use `acknowledge_gate` at human gates, and call `health_check` + `list_playbooks` at session start.
+- **Playbook Library section in README**: Cross-link to the [r-playbooks](https://github.com/davidrsch/r-playbooks) library and gallery.
+
+### Changed
+
+- **`match_playbook` moved to position 3** in the tool list (was last at position 11). Tool ordering signals discovery priority to agents; `match_playbook` is the primary entry point and should appear early. Description updated to explicitly state it must be called on every user turn.
+
 ## [1.2.3] - 2026-05-12
 
 ### Removed

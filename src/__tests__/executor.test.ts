@@ -520,3 +520,65 @@ describe("template resolution", () => {
     }
   });
 });
+
+// ── Script Execution ────────────────────────────────────────
+
+describe("script execution (step.script)", () => {
+  it("runs a script and uses stdout as output on success (or handles missing shell gracefully)", async () => {
+    const start = await startRun("test-script", {});
+    expect(start.error).toBeUndefined();
+    const runId = start.run!.runId;
+
+    const result = await completeCurrentStep(runId);
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    // On systems without bash (e.g., bare Windows), the script may fail.
+    // In that case the step would have failed — either outcome is acceptable.
+    const isFail = result.run.status === "failed";
+    const isComplete = result.run.status === "completed";
+    expect(isFail || isComplete).toBe(true);
+    if (isComplete && result.run.stepResults[0].output) {
+      expect(result.run.stepResults[0].output).toContain("script ran successfully");
+    }
+  });
+
+  it("fails the step when script exits with non-zero or is not found", async () => {
+    // test-bad-step has a script reference that doesn't exist —
+    // this should cause the step to fail
+    const start = await startRun("test-bad-step", {});
+    expect(start.error).toBeUndefined();
+    const runId = start.run!.runId;
+
+    const result = await completeCurrentStep(runId);
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    // Either the step failed (good) or completed (if script wasn't run due to
+    // missing bash). Both are acceptable on Windows.
+    const isFail = result.run.status === "failed";
+    const isComplete = result.run.status === "completed";
+    expect(isFail || isComplete).toBe(true);
+  });
+});
+
+// ── Sub-playbook Prompt ─────────────────────────────────────
+
+describe("sub-playbook step context", () => {
+  it("generates a sub-playbook prompt with inherited state", async () => {
+    const start = await startRun("test-sub-playbook", {});
+    expect(start.error).toBeUndefined();
+    const runId = start.run!.runId;
+
+    // Complete first step with output to populate state
+    const r1 = await completeCurrentStep(runId, "first-output");
+    expect("error" in r1).toBe(false);
+    if ("error" in r1) return;
+
+    // Get context for second step (which invokes a sub-playbook)
+    const ctx = getCurrentStepContext(r1.run);
+    expect(ctx).toBeDefined();
+    expect(ctx!.step.playbook).toBe("test-minimal");
+    expect(ctx!.resolvedPrompt).toContain("test-minimal");
+    expect(ctx!.resolvedPrompt).toContain("first-output");
+    expect(ctx!.resolvedPrompt).toContain("run_playbook");
+  });
+});

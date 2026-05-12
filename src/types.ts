@@ -61,6 +61,8 @@ export interface PlaybookStep {
   playbook?: string;
   /** Whether automatic retry is enabled on failure */
   auto_retry?: boolean;
+  /** Maximum number of retry attempts when auto_retry is enabled (default: 3) */
+  max_retries?: number;
   /** Description shown in progress output */
   description?: string;
   /** Maximum time in seconds this step is allowed to run (0 = unlimited) */
@@ -158,6 +160,8 @@ export interface PlaybookRunState {
     stepId: string;
     acknowledged: boolean;
   };
+  /** IDs of sub-playbook runs spawned by this run's steps */
+  subRunIds?: string[];
 }
 
 export interface StepResult {

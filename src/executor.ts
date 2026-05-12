@@ -14,6 +14,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
+import { execSync } from "node:child_process";
 import type { PlaybookStep, PlaybookRunState, PlaybookSummary, StepResult } from "./types.js";
 import { loadPlaybook, discoverPlaybooks, validatePlaybook } from "./loader.js";
 import {
@@ -361,7 +362,26 @@ export function getCurrentStepContext(run: PlaybookRunState):
   } else if (step["inline-prompt"]) {
     stepPrompt = step["inline-prompt"];
   } else if (step.playbook) {
-    stepPrompt = `Execute the sub-playbook: ${step.playbook}\n\nParameters: ${JSON.stringify(run.params, null, 2)}`;
+    // Build sub-playbook context: pass parent params + accumulated state so the
+    // sub-playbook can reference {{state.*}} values from the parent.
+    const subParams = { ...run.params, ...run.state };
+    stepPrompt = [
+      `Execute the sub-playbook: **${step.playbook}**`,
+      ``,
+      `### Inherited Parameters & State`,
+      '```json',
+      JSON.stringify(subParams, null, 2),
+      '```',
+      ``,
+      `The agent should call \`run_playbook\` with \`name: "${step.playbook}"\``,
+      `and pass the above params. On completion, the sub-playbook's outputs`,
+      `will be stored in this step's output under the state key \`${step.output ?? step.id}\`.`,
+    ].join("\n");
+    // Store which sub-playbook was spawned
+    if (!run.subRunIds) run.subRunIds = [];
+    if (!run.subRunIds.includes(step.playbook)) {
+      run.subRunIds.push(step.playbook);
+    }
   }
 
   const resolvedPrompt = resolveTemplate(stepPrompt, ctx);
@@ -444,7 +464,7 @@ export async function completeCurrentStep(
       // ── Auto-retry ──
       if (step?.auto_retry) {
         const retryCount = (stepResult as StepResult & { retryCount?: number }).retryCount ?? 0;
-        const maxRetries = 3;
+        const maxRetries = step.max_retries ?? 3;
         if (retryCount < maxRetries) {
           (stepResult as StepResult & { retryCount: number }).retryCount = retryCount + 1;
           stepResult.status = "running";
@@ -495,6 +515,20 @@ export async function completeCurrentStep(
           });
           return { run, nextStepContext: undefined };
         }
+      }
+    }
+
+    // ── Shell script validation ──
+    // If the step defines a `script` field, execute it before marking the step
+    // complete. Non-zero exit code fails the step. Stderr is captured for debugging.
+    if (step?.script && !error) {
+      const scriptResult = runStepScript(step.script, pb._dir);
+      if (scriptResult.error) {
+        error = scriptResult.error;
+      }
+      // Script stdout is stored as the step output (if no explicit output provided)
+      if (!output && scriptResult.stdout) {
+        output = scriptResult.stdout;
       }
     }
 
@@ -789,6 +823,36 @@ function validateParamValue(
     }
     default:
       return null;
+  }
+}
+
+// ─── Shell Script Validation ────────────────────────────────
+
+/**
+ * Execute a step's validation script.
+ * Scripts are resolved relative to the playbook directory.
+ * Returns { stdout, error } where error is non-null on failure.
+ */
+function runStepScript(
+  script: string,
+  playbookDir: string,
+): { stdout: string; stderr: string; error: string | null } {
+  const scriptPath = path.isAbsolute(script) ? script : path.resolve(playbookDir, script);
+  try {
+    const stdout = execSync(scriptPath, {
+      encoding: "utf-8",
+      timeout: 30_000,
+      windowsHide: true,
+      cwd: playbookDir,
+    });
+    return { stdout: stdout.trimEnd(), stderr: "", error: null };
+  } catch (err) {
+    const execErr = err as { stdout?: Buffer | string; stderr?: Buffer | string; message?: string };
+    return {
+      stdout: typeof execErr.stdout === "string" ? execErr.stdout.trimEnd() : "",
+      stderr: typeof execErr.stderr === "string" ? execErr.stderr.trimEnd() : "",
+      error: `Script "${script}" failed: ${execErr.message ?? String(err)}`,
+    };
   }
 }
 

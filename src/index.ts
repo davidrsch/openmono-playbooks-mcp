@@ -28,6 +28,11 @@ import {
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// __dirname equivalent in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 import {
   listPlaybooks,
@@ -93,10 +98,23 @@ function checkRateLimit(): McpErrorResult | null {
 
 // ─── Server Setup ─────────────────────────────────────────────
 
+// Resolve the absolute path to the extension logo for the MCP icons capability.
+// VS Code uses file:// URIs to display icons for stdio-transport MCP servers
+// in the agent mode tool picker.
+const logoPath = path.resolve(__dirname, "..", "logo.png");
+const logoUri = `file:///${logoPath.replace(/\\/g, "/")}`;
+
 const server = new Server(
   {
     name: "playbooks-mcp",
     version: "1.0.0",
+    icons: [
+      {
+        src: logoUri,
+        mimeType: "image/png",
+        sizes: ["512x512"],
+      },
+    ],
   },
   {
     capabilities: {
@@ -278,6 +296,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ["runId"],
+        },
+      },
+      {
+        name: "match_playbook",
+        description:
+          "Match a natural-language query against all available playbooks using trigger-pattern matching. Returns playbooks sorted by relevance score. Use this to find the right playbook for a user's intent without browsing the full list.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            input: {
+              type: "string",
+              description: "Natural-language query to match against playbook trigger patterns (e.g., 'commit', 'deploy to staging')",
+            },
+          },
+          required: ["input"],
         },
       },
     ],

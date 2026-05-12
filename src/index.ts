@@ -7,12 +7,17 @@
  * to any MCP-compatible agent (Claude Desktop, Cline, Continue, etc.).
  *
  * This server makes playbooks accessible as first-class tools:
- *   - health_check        — Server readiness probe
- *   - list_playbooks      — Discover available playbooks
- *   - run_playbook        — Execute a playbook with typed parameters
- *   - resume_playbook     — Resume an interrupted playbook
- *   - get_playbook_state  — Inspect run state
- *   - validate_playbook   — Validate syntax and parameters
+ *   - health_check        — Server readiness probe                   [read-only]
+ *   - list_playbooks      — Discover available playbooks             [read-only]
+ *   - match_playbook      — Match user input to trigger patterns     [read-only]
+ *   - validate_playbook   — Validate syntax and parameters           [read-only]
+ *   - get_playbook_state  — Inspect run state                        [read-only]
+ *   - run_playbook        — Execute a playbook with typed parameters [stateful]
+ *   - resume_playbook     — Resume an interrupted playbook           [stateful]
+ *   - complete_step       — Advance playbook to the next step        [stateful]
+ *   - skip_step           — Skip current step and advance            [stateful]
+ *   - fail_step           — Terminate playbook with failure          [destructive]
+ *   - acknowledge_gate    — Acknowledge a human-in-the-loop gate     [stateful]
  *
  * Inspired by and derived from OpenMonoAgent.ai by StartupHakk.
  * See: https://github.com/StartupHakk/OpenMonoAgent.ai
@@ -23,6 +28,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 
@@ -98,7 +105,42 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      prompts: {},
     },
+    instructions: [
+      "You are connected to the Playbooks MCP server, which orchestrates typed, multi-step AI",
+      "workflows (playbooks) with human-in-the-loop gates and checkpoint/resume.",
+      "",
+      "## Mandatory Agent Protocol",
+      "",
+      "### On every user turn (BEFORE responding)",
+      "1. Call `match_playbook` with the user's raw input.",
+      "   - If a match is returned (score >= 1), call `run_playbook` with that playbook name.",
+      "   - Do NOT respond to the user directly when a playbook matches — execute it instead.",
+      "   - If no match: respond normally.",
+      "",
+      "### During a playbook run",
+      "2. After completing the work described in each step prompt, ALWAYS call `complete_step`.",
+      "   Never leave a step open. Do not skip this even if the step seems trivial.",
+      "3. If a step cannot be completed, call `fail_step` with a clear error description.",
+      "4. To skip an optional step, call `skip_step`.",
+      "",
+      "### At gates (Confirm / Review / Approve)",
+      "5. Complete the step work first, present the output to the user, then call `acknowledge_gate`.",
+      "   The run will NOT advance until the gate is acknowledged.",
+      "",
+      "### Session start",
+      "6. Call `health_check` once to verify the server is ready.",
+      "7. Call `list_playbooks` to load available workflows into context.",
+      "",
+      "## Tool Lifecycle",
+      "",
+      "match_playbook → run_playbook → [complete_step | skip_step | fail_step]",
+      "                                → acknowledge_gate (at gates) → repeat until done",
+      "",
+      "NEVER read a PLAYBOOK.md file directly. Always use `run_playbook` to execute workflows.",
+      "Use `resume_playbook` if the agent restarts mid-run.",
+    ].join("\n"),
   },
 );
 
@@ -110,7 +152,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "health_check",
         description:
-          "Health check / readiness probe. Returns the server status including uptime, active runs count, and search paths. Use this to verify the MCP server is operational before issuing other commands.",
+          "Health check / readiness probe. Returns the server status including uptime, active runs count, and search paths. Use this to verify the MCP server is operational before issuing other commands. Read-only — does not modify any state.",
+        annotations: {
+          readOnlyHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         inputSchema: {
           type: "object",
           properties: {},
@@ -119,7 +166,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "list_playbooks",
         description:
-          "Discover all available playbooks with names, descriptions, parameters, and tags. Playbooks are declarative, versioned, multi-step AI workflows encoded as YAML+Markdown files. Use this to explore what workflows are available before running one.",
+          "Discover all available playbooks with names, descriptions, parameters, and tags. Playbooks are declarative, versioned, multi-step AI workflows encoded as YAML+Markdown files. Use this to explore what workflows are available before running one. Read-only — does not modify any state.",
+        annotations: {
+          readOnlyHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         inputSchema: {
           type: "object",
           properties: {
@@ -131,9 +183,35 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "match_playbook",
+        description:
+          "Match a natural-language query against all available playbooks using trigger-pattern matching. Returns playbooks sorted by relevance score. Call this on EVERY user turn before responding — if a match is found, call run_playbook instead of replying directly. Read-only — does not modify any state.",
+        annotations: {
+          readOnlyHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+        inputSchema: {
+          type: "object",
+          properties: {
+            input: {
+              type: "string",
+              description: "Natural-language query to match against playbook trigger patterns (e.g., 'commit', 'deploy to staging')",
+            },
+          },
+          required: ["input"],
+        },
+      },
+      {
         name: "run_playbook",
         description:
-          "Start executing a multi-step playbook workflow. Returns the first step's system prompt, resolved step prompt, and gate information. The agent should complete the step and then call complete_step or skip_step. Each run is assigned a unique runId that must be used in subsequent step-control calls.",
+          "Start executing a multi-step playbook workflow. Returns the first step's system prompt, resolved step prompt, and gate information. The agent should complete the step and then call complete_step or skip_step. Each run is assigned a unique runId that must be used in subsequent step-control calls. Creates persistent run state on disk.",
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
         inputSchema: {
           type: "object",
           properties: {
@@ -155,7 +233,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "complete_step",
         description:
-          "Mark the current playbook step as completed and advance to the next step. Returns the next step's context if there are more steps, or indicates the run is finished. Pass the optional output parameter to store a named value for downstream steps (referenced via {{state.key}}).",
+          "Mark the current playbook step as completed and advance to the next step. Returns the next step's context if there are more steps, or indicates the run is finished. Pass the optional output parameter to store a named value for downstream steps (referenced via {{state.key}}). Advances persistent run state — cannot be undone.",
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
         inputSchema: {
           type: "object",
           properties: {
@@ -175,7 +259,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "skip_step",
         description:
-          "Skip the current playbook step and advance to the next one. Useful for optional steps, conditional branches, or when a step is not applicable to the current context.",
+          "Skip the current playbook step and advance to the next one. Useful for optional steps, conditional branches, or when a step is not applicable to the current context. Advances persistent run state — cannot be undone.",
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
         inputSchema: {
           type: "object",
           properties: {
@@ -190,7 +280,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "fail_step",
         description:
-          "Mark the current playbook step as failed. The playbook run will be terminated with a failure status. The run cannot be resumed after failure unless the step has auto_retry enabled.",
+          "Mark the current playbook step as failed and permanently terminate the run. The playbook run will be terminated with a failure status and cannot be resumed. Use only when the step cannot be completed and the workflow must be abandoned.",
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
         inputSchema: {
           type: "object",
           properties: {
@@ -210,6 +306,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         name: "resume_playbook",
         description:
           "Resume a playbook that was interrupted (e.g., agent restart, connection loss). Restores state from the last checkpoint on disk and returns the current step context. Only works for runs that were in progress when the interruption occurred.",
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         inputSchema: {
           type: "object",
           properties: {
@@ -224,7 +326,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "get_playbook_state",
         description:
-          "Get the full current state of a playbook run: which step is active, step completion status, named outputs stored via {{state.*}}, parameters, and run metadata. Works for both active and completed runs.",
+          "Get the full current state of a playbook run: which step is active, step completion status, named outputs stored via {{state.*}}, parameters, and run metadata. Works for both active and completed runs. Read-only — does not modify any state.",
+        annotations: {
+          readOnlyHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         inputSchema: {
           type: "object",
           properties: {
@@ -239,7 +346,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "validate_playbook",
         description:
-          "Validate a playbook's syntax, parameter definitions, and step structure. Use this during playbook development or before executing an unfamiliar playbook. Returns a list of issues with severity levels.",
+          "Validate a playbook's syntax, parameter definitions, and step structure without executing it. Use this during playbook development or before executing an unfamiliar playbook. Returns a list of issues with severity levels. Read-only — does not create a run or modify any state.",
+        annotations: {
+          readOnlyHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
         inputSchema: {
           type: "object",
           properties: {
@@ -260,7 +372,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "acknowledge_gate",
         description:
-          "Acknowledge a human-in-the-loop gate on a paused playbook step. Gates (Confirm, Review, Approve) require explicit acknowledgment before the step can be marked complete and the run can advance. Call this after presenting the step's output for human review.",
+          "Acknowledge a human-in-the-loop gate on a paused playbook step. Gates (Confirm, Review, Approve) require explicit acknowledgment before the step can be marked complete and the run can advance. Call this after presenting the step's output for human review. Advances persistent run state — cannot be undone.",
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
         inputSchema: {
           type: "object",
           properties: {
@@ -277,20 +395,74 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["runId"],
         },
       },
+    ],
+  };
+});
+
+// ─── Prompt Definitions ───────────────────────────────────────
+
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  const playbooks = discoverPlaybooks().filter(
+    (p) => p["user-invocable"] !== false,
+  );
+
+  const prompts = playbooks.map((p) => {
+    const args = Object.entries(p.parameters ?? {}).map(([paramName, param]) => ({
+      name: paramName,
+      description: param.hint ?? `${param.type} parameter`,
+      required: param.required === true,
+    }));
+
+    return {
+      name: p.name,
+      title: p.name,
+      description: p.description,
+      arguments: args.length > 0 ? args : undefined,
+    };
+  });
+
+  return { prompts };
+});
+
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name, arguments: promptArgs } = request.params;
+  const playbooks = discoverPlaybooks();
+  const playbook = playbooks.find((p) => p.name === name);
+
+  if (!playbook) {
+    throw new Error(`Playbook "${name}" not found`);
+  }
+
+  const paramLines = Object.entries(playbook.parameters ?? {})
+    .map(([k, param]) => {
+      const supplied = promptArgs?.[k];
+      const value = supplied ?? (param.default !== undefined ? String(param.default) : "<required>");
+      return `  ${k}: ${value}  # ${param.hint ?? param.type}`;
+    })
+    .join("\n");
+
+  const hint = playbook["argument-hint"] ?? "";
+  const userMessage = [
+    `Please run the \`${name}\` playbook.`,
+    hint ? `Usage: \`run_playbook ${name} ${hint}\`` : "",
+    "",
+    "Call `run_playbook` now with:",
+    "```",
+    `name: ${name}`,
+    paramLines ? `params:\n${paramLines}` : "params: {}",
+    "```",
+    "",
+    "After each step completes, call `complete_step`. Acknowledge gates with `acknowledge_gate`.",
+  ]
+    .filter((l) => l !== undefined)
+    .join("\n");
+
+  return {
+    description: playbook.description,
+    messages: [
       {
-        name: "match_playbook",
-        description:
-          "Match a natural-language query against all available playbooks using trigger-pattern matching. Returns playbooks sorted by relevance score. Use this to find the right playbook for a user's intent without browsing the full list.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            input: {
-              type: "string",
-              description: "Natural-language query to match against playbook trigger patterns (e.g., 'commit', 'deploy to staging')",
-            },
-          },
-          required: ["input"],
-        },
+        role: "user" as const,
+        content: { type: "text" as const, text: userMessage },
       },
     ],
   };

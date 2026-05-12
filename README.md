@@ -92,6 +92,14 @@ This server exposes the following tools to any MCP-compatible agent:
 | `match_playbook`     | Match user input against playbook trigger patterns with weighted scoring         |
 | `health_check`       | Server readiness probe — status, uptime, active runs, search paths               |
 
+## Playbook Library
+
+Looking for ready-made playbooks? **[r-playbooks](https://github.com/davidrsch/r-playbooks)** is a curated library of 50+ playbooks for R development workflows — package development, testing, Shiny, tidymodels, DuckDB, CRAN submission, and more.
+
+Browse and download at: **[davidrsch.github.io/r-playbooks](https://davidrsch.github.io/r-playbooks/)**
+
+---
+
 ## Quick Start
 
 ### Prerequisites

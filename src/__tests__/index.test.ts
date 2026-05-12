@@ -499,7 +499,7 @@ function getText(result: CallToolResult): string {
 }
 
 function extractRunId(text: string): string {
-  const match = text.match(/\*\*Run ID:\*\*\s*([a-f0-9-]+)/);
+  const match = text.match(/\*\*Run ID:\*\*\s*`?([a-f0-9-]+)`?/);
   if (match) return match[1];
   return "";
 }

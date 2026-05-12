@@ -581,6 +581,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
           lines.push(`  ${m.playbook.description}`);
         }
+        lines.push(
+          "",
+          "---",
+          "",
+          "> **🔔 NEXT STEP:** To execute the best match, call `run_playbook` with the playbook name.",
+          "> Do NOT read the PLAYBOOK.md file — call `run_playbook` to execute the workflow properly.",
+        );
         return createTextResult(lines.join("\n"));
       }
 
@@ -629,7 +636,11 @@ function formatPlaybookList(
     argumentHint?: string;
   }[],
 ): string {
-  const lines: string[] = [`## Available Playbooks (${playbooks.length})\n`];
+  const lines: string[] = [
+    `## Available Playbooks (${playbooks.length})\n`,
+    "> **🔔 PROTOCOL:** To execute a playbook, call `run_playbook` with its name and parameters. " +
+    "Do NOT read the PLAYBOOK.md file directly — it is a workflow to be executed, not documentation.\n",
+  ];
   for (const p of playbooks) {
     const tags = p.tags && p.tags.length > 0 ? ` [${p.tags.join(", ")}]` : "";
     const trigger = p.trigger !== "manual" ? ` (trigger: ${p.trigger})` : "";
@@ -644,14 +655,36 @@ function formatStepContext(
   ctx: NonNullable<ReturnType<typeof getCurrentStepContext>>,
 ): string {
   const lines: string[] = [
-    `## 📋 Playbook Step: ${ctx.step.id}`,
-    `- **Run ID:** ${runId}`,
-    `- **Step:** ${ctx.stepIndex + 1}`,
+    "---",
+    "",
+    "# ⚠️ PLAYBOOK PROTOCOL — MANDATORY",
+    "",
+    `**Run ID:** \`${runId}\`  `,
+    "**You are now executing a playbook step. After completing the instructions below, you MUST call `complete_step` to advance.**",
+    "",
+    `→ When done: call **complete_step** with runId: \`"${runId}"\` and optional output`,
+    `→ To skip: call **skip_step** with runId: \`"${runId}"\``,
+    `→ On failure: call **fail_step** with runId: \`"${runId}"\` and an error description`,
+    "",
+    "Do NOT just read the prompt and move on — execute it, then call complete_step.",
+    "",
+    "---",
+    "",
+    `## 📋 Step: ${ctx.step.id} (${ctx.stepIndex + 1})`,
     `- **Description:** ${ctx.step.description ?? "—"}`,
   ];
 
   if (ctx.gate) {
-    lines.push(`- **Gate:** 🚪 ${ctx.gate} (requires human acknowledgment before proceeding)`);
+    lines.push(
+      "",
+      `🚪 **GATE ACTIVE: ${ctx.gate}**`,
+      `This step requires human ${ctx.gate.toLowerCase()} before it can proceed.`,
+      "1. Execute the step prompt below",
+      "2. Present the output for human review",
+      `3. Call **acknowledge_gate** with runId: \`"${runId}"\` to proceed`,
+      "",
+      "⚠️ The step will NOT complete until the gate is acknowledged.",
+    );
   }
 
   lines.push(
@@ -670,19 +703,8 @@ function formatStepContext(
     "",
     "---",
     "",
-    "**Instructions for the agent:**",
-    "1. Execute the **Step Prompt** above using the available tools",
-    "2. When the step is done, call `complete_step` with the run ID and optional output",
-    "3. If this step should be skipped, call `skip_step` with the run ID",
-    "4. If something goes wrong, call `fail_step` with the run ID and an error description",
+    `🔁 **REMINDER:** When you finish this step, call **complete_step** with runId: \`"${runId}"\``,
   );
-
-  if (ctx.gate) {
-    lines.push(
-      "",
-      `⚠️ **Gate Active:** This step requires **${ctx.gate}** approval before proceeding. The step result should be presented for human review.`,
-    );
-  }
 
   return lines.join("\n");
 }

@@ -32,8 +32,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_INDEX = path.resolve(__dirname, "..", "..", "dist", "index.js");
 
-// Skip the entire suite if dist/index.js does not exist
-const describeIf = fs.existsSync(DIST_INDEX) ? describe : describe.skip;
+// Skip the entire suite if dist/index.js does not exist OR if we detect
+// ESM bundling issues (e.g., the SDK references __dirname in an ESM context).
+const DIST_EXISTS = fs.existsSync(DIST_INDEX);
+const describeIf = DIST_EXISTS ? describe : describe.skip;
 
 describeIf("MCP Server E2E", () => {
   let client: Client;

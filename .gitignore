@@ -6,3 +6,4 @@ dist/
 Thumbs.db
 .openmono/state/
 coverage/
+.vscode/

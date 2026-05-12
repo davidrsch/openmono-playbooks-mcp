@@ -26,7 +26,6 @@ describe("ErrorCode enum", () => {
     expect(codes).toContain("NO_MORE_STEPS");
     expect(codes).toContain("MAX_RESTORE_DEPTH");
     expect(codes).toContain("INPUT_TOO_LARGE");
-    expect(codes).toContain("RATE_LIMIT_EXCEEDED");
     expect(codes).toContain("INTERNAL_ERROR");
     expect(codes).toContain("SUB_PLAYBOOK_NOT_FOUND");
   });
@@ -59,10 +58,10 @@ describe("makeError", () => {
   });
 
   it("produces machine-readable error codes", () => {
-    const err = makeError(ErrorCode.RATE_LIMIT_EXCEEDED, "Slow down");
+    const err = makeError(ErrorCode.INTERNAL_ERROR, "Something broke");
     // The code should be a string constant, not a numeric enum
     expect(typeof err.code).toBe("string");
-    expect(err.code).toBe("RATE_LIMIT_EXCEEDED");
+    expect(err.code).toBe("INTERNAL_ERROR");
   });
 
   it("has error: true flag", () => {

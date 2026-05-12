@@ -428,36 +428,26 @@ describeIf("MCP Server E2E", () => {
     });
   });
 
-  // ─── Rate limiting ─────────────────────────────────────────
+  // ─── Rapid successive requests ───────────────────────────
 
-  describe("rate limiting", () => {
-    it("rejects requests sent too rapidly", async () => {
-      // First request — allowed
+  describe("rapid successive requests", () => {
+    it("both requests succeed when sent in quick succession", async () => {
       const r1 = (await client.callTool({
         name: "list_playbooks",
         arguments: {},
       })) as CallToolResult;
       expect(r1.isError).toBeFalsy();
 
-      // Second request immediately — should be rate-limited
       const r2 = (await client.callTool({
         name: "list_playbooks",
         arguments: {},
       })) as CallToolResult;
 
-      const text2 = getText(r2);
-      // Rate limiting may or may not trigger depending on timing
-      // Only assert if it does trigger
-      if (text2.includes("RATE_LIMIT_EXCEEDED") || text2.includes("Rate limit")) {
-        expect(text2).toMatch(/rate limit/i);
-      } else {
-        // If it didn't trigger, the request should still succeed
-        expect(text2).toContain("test-minimal");
-      }
+      expect(r2.isError).toBeFalsy();
+      expect(getText(r2)).toContain("test-minimal");
     });
 
-    it("health_check bypasses rate limiting", async () => {
-      // Send health_check twice rapidly — neither should be rate-limited
+    it("rapid health_check calls both succeed", async () => {
       const r1 = (await client.callTool({
         name: "health_check",
         arguments: {},

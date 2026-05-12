@@ -55,16 +55,10 @@ import { matchTrigger } from "./trigger.js";
 import { ErrorCode, makeError, type McpErrorResult } from "./errors.js";
 import { logger } from "./logger.js";
 
-// ─── Rate Limiting & Input Guards ────────────────────────────
+// ─── Input Guards ────────────────────────────────────────────
 
 /** Maximum request body size the server will accept (1 MiB) */
 const MAX_INPUT_SIZE = 1_048_576;
-
-/** Minimum interval between requests from the same "session" (ms) */
-const RATE_LIMIT_WINDOW_MS = 100;
-
-/** Maps a coarse session key to the last request timestamp */
-const rateLimitMap = new Map<string, number>();
 
 function checkInputSize(
   name: string,
@@ -78,26 +72,6 @@ function checkInputSize(
       { tool: name, size: Buffer.byteLength(raw, "utf-8") },
     );
   }
-  return null;
-}
-
-function checkRateLimit(): McpErrorResult | null {
-  // Skip rate limiting in test mode
-  if (process.env.NODE_ENV === "test") return null;
-
-  // Coarse in-process rate limiter: use an ephemeral session key
-  // (In production an MCP server would use transport-scoped identifiers.)
-  const key = "default";
-  const last = rateLimitMap.get(key) ?? 0;
-  const now = Date.now();
-  if (now - last < RATE_LIMIT_WINDOW_MS) {
-    return makeError(
-      ErrorCode.RATE_LIMIT_EXCEEDED,
-      `Rate limit exceeded. Minimum ${RATE_LIMIT_WINDOW_MS}ms between requests.`,
-      { retryAfterMs: RATE_LIMIT_WINDOW_MS - (now - last) },
-    );
-  }
-  rateLimitMap.set(key, now);
   return null;
 }
 
@@ -328,13 +302,6 @@ const serverStartTime = Date.now();
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-
-  // ── Rate limiting ───────────────────────────────────────────
-  // health_check bypasses rate limiting
-  if (name !== "health_check") {
-    const rateErr = checkRateLimit();
-    if (rateErr) return createErrorResult(rateErr);
-  }
 
   // ── Input size guard ────────────────────────────────────────
   const sizeErr = checkInputSize(name, args as Record<string, unknown> | undefined);

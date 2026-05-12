@@ -30,8 +30,6 @@ export enum ErrorCode {
   MAX_RESTORE_DEPTH = "MAX_RESTORE_DEPTH",
   /** Input exceeded maximum allowed size */
   INPUT_TOO_LARGE = "INPUT_TOO_LARGE",
-  /** Rate limit exceeded */
-  RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED",
   /** An unexpected internal error occurred */
   INTERNAL_ERROR = "INTERNAL_ERROR",
   /** A sub-playbook was not found */

@@ -34,6 +34,10 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Read version from package.json at startup so it stays in sync with releases
+const pkgPath = path.resolve(__dirname, "..", "package.json");
+const SERVER_VERSION: string = JSON.parse(fs.readFileSync(pkgPath, "utf-8")).version;
+
 import {
   listPlaybooks,
   startRun,
@@ -107,7 +111,7 @@ const logoUri = `file:///${logoPath.replace(/\\/g, "/")}`;
 const server = new Server(
   {
     name: "playbooks-mcp",
-    version: "1.0.0",
+    version: SERVER_VERSION,
     icons: [
       {
         src: logoUri,
@@ -369,7 +373,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `- **Uptime:** ${uptimeSec}s`,
             `- **Persisted runs on disk:** ${persistedRuns}`,
             `- **Search paths:** ${searchPaths.length > 0 ? searchPaths.join(", ") : "(none found)"}`,
-            `- **Version:** 1.0.0`,
+            `- **Version:** ${SERVER_VERSION}`,
           ].join("\n"),
         );
       }

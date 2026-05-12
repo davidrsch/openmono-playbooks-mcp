@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-05-12
+
+### Added
+
+- **Shell script validation**: Steps with a `script` field now execute the script before completion. Non-zero exit codes fail the step; stdout is captured as the step output.
+- **Configurable `max_retries` on steps**: New `max_retries` field on `PlaybookStep` type (defaults to 3) replaces the hardcoded retry limit.
+- **Enhanced sub-playbook prompts**: `getCurrentStepContext` now generates rich sub-playbook prompts that include inherited parent state as JSON, explicit `run_playbook` call instructions, and `subRunIds` tracking on the run state.
+- **New fixtures**: `test-script` (with `check.sh`), `test-sub-playbook` for testing script execution and sub-playbook prompt generation.
+- **New tests**: Script execution tests (cross-platform with graceful shell-not-found handling) and sub-playbook prompt generation tests.
+
+### Fixed
+
+- **`list_playbooks` not discovering project-local playbooks in production**: When VS Code spawns the MCP stdio server as a child process, `process.cwd()` is not the user's project root. Fixed by injecting `WORKSPACE_ROOTS` env var from `extension.ts` → `resolveMcpServerDefinition` and adding a `WORKSPACE_ROOTS` search step in `loader.ts` → `resolveSearchPaths`.
+- **`match_playbook` tool not registered**: The handler existed but was missing from `ListToolsRequestSchema`'s tools array. Now properly registered with full input schema.
+- **`dist/` untracked from git**: Build artifacts no longer clutter the repository. `dist/` is produced by `npm run build`.
+
 ## [1.1.1] - 2026-05-12
 
 ### Fixed
@@ -92,9 +108,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-version Node.js CI matrix (18.x, 20.x, 22.x) with lint, test, and security audit
 - Comprehensive documentation including README, COMPARISON, HOW-TO-CREATE-PLAYBOOKS, and PLAYBOOKS reference
 
-[1.0.0]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.0
-[1.0.1]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.1
-[1.0.2]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.2
-[1.0.3]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.3
+[1.2.0]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.2.0
+[1.1.1]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.1.1
 [1.1.0]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.1.0
-[Unreleased]: https://github.com/davidrsch/playbooks-mcp/compare/v1.1.0...HEAD
+[1.0.3]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.3
+[1.0.2]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.2
+[1.0.1]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.1
+[1.0.0]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.0
+[Unreleased]: https://github.com/davidrsch/playbooks-mcp/compare/v1.2.0...HEAD

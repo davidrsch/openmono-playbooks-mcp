@@ -2,6 +2,7 @@
 
 [![Install in VS Code](https://img.shields.io/static/v1?label=VS%20Code&message=Install&color=007ACC&style=for-the-badge&logo=visualstudiocode)](vscode:extension/davidrsch.playbooks-mcp)
 [![Install on Open VSX](https://img.shields.io/static/v1?label=Open%20VSX&message=Install&color=A60EE5&style=for-the-badge)](https://open-vsx.org/extension/davidrsch/playbooks-mcp)
+[![npm](https://img.shields.io/npm/v/playbooks-mcp?style=for-the-badge&logo=npm&color=CB3837)](https://www.npmjs.com/package/playbooks-mcp)
 
 **MCP server that exposes [OpenMono Playbooks](https://github.com/StartupHakk/OpenMonoAgent.ai) — typed, multi-step AI workflows with human-in-the-loop gates, checkpointing, and composability — to any MCP-compatible agent.**
 
@@ -105,39 +106,34 @@ Browse and download at: **[davidrsch.github.io/r-playbooks](https://davidrsch.gi
 ### Prerequisites
 
 - Node.js >= 18
-- An MCP-compatible agent (Claude Desktop, Cline, Continue, etc.)
+- An MCP-compatible agent (Claude Code, Claude Desktop, Cline, Continue, etc.)
 
 ### Installation
 
+#### Claude Code (VSCode extension)
+
 ```bash
-# Clone this repo
-git clone https://github.com/davidrsch/playbooks-mcp.git
-cd playbooks-mcp
-
-# Install dependencies
-npm install
-
-# Build
-npm run build
+claude mcp add --transport stdio --scope user playbooks-mcp -- npx -y playbooks-mcp
 ```
 
-### Configure Your Agent
+#### Claude Desktop / Cline / Continue
 
-Add to your MCP agent's configuration (e.g., `cline_mcp_settings.json` or `claude_desktop_config.json`):
+Add to your agent's MCP configuration file (e.g., `claude_desktop_config.json`, `cline_mcp_settings.json`):
 
 ```json
 {
   "mcpServers": {
     "playbooks-mcp": {
-      "command": "node",
-      "args": ["path/to/playbooks-mcp/dist/index.js"],
-      "env": {
-        "PLAYBOOKS_PATH": "~/.openmono/playbooks"
-      }
+      "command": "npx",
+      "args": ["-y", "playbooks-mcp"]
     }
   }
 }
 ```
+
+#### VS Code extension (GitHub Copilot agent mode)
+
+Install from the [VS Code Marketplace](vscode:extension/davidrsch.playbooks-mcp) or [Open VSX](https://open-vsx.org/extension/davidrsch/playbooks-mcp) — the MCP server registers automatically, no configuration needed.
 
 ### Add Playbooks
 

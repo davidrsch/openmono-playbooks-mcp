@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-05-13
+
+### Added
+
+- **npm distribution**: Published to npm as `playbooks-mcp`. Install and run via `npx -y playbooks-mcp` without cloning the repository.
+- **`bin` entry in `package.json`**: Makes the bundled stdio server directly executable as a CLI (`playbooks-mcp`) after npm install.
+- **`files` field in `package.json`**: Controls the npm publish payload — only `dist/index.js`, `dist/index.js.map`, and `logo.png` are uploaded. The VSCode extension code, test files, and source are excluded.
+- **npm publish step in CI workflow**: Pushing a version tag now also publishes to npm (in addition to VS Code Marketplace, Open VSX, and GitHub Release). Uses `NODE_AUTH_TOKEN` with the `NPM_PAT` repository secret.
+- **npm badge in README**: Links to the npm package page.
+- **Claude Code installation instructions in README**: One-liner `claude mcp add` command for users with the VSCode extension or any other Claude Code installation.
+
 ## [1.2.4] - 2026-05-13
 
 ### Added
@@ -157,6 +168,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-version Node.js CI matrix (18.x, 20.x, 22.x) with lint, test, and security audit
 - Comprehensive documentation including README, COMPARISON, HOW-TO-CREATE-PLAYBOOKS, and PLAYBOOKS reference
 
+[1.3.0]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.3.0
+[1.2.4]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.2.4
 [1.2.3]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.2.3
 [1.2.2]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.2.2
 [1.2.1]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.2.1
@@ -167,4 +180,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.0.2]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidrsch/playbooks-mcp/releases/tag/v1.0.0
-[Unreleased]: https://github.com/davidrsch/playbooks-mcp/compare/v1.2.3...HEAD
+[Unreleased]: https://github.com/davidrsch/playbooks-mcp/compare/v1.3.0...HEAD

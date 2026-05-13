@@ -9,11 +9,6 @@
   "bin": {
     "playbooks-mcp": "dist/index.js"
   },
-  "files": [
-    "dist/index.js",
-    "dist/index.js.map",
-    "logo.png"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
